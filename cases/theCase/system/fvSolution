@@ -1,0 +1,67 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      fvSolution;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+solvers
+{
+    //blockT
+    //{
+    //    solver           BiCGStab;
+    //    preconditioner   Cholesky;
+
+    //    tolerance        1e-09;
+    //    relTol           0.01;
+
+    //    minIter          1;
+    //    maxIter          1000;
+    //}
+    blockT
+    {
+        solver           GMRES;
+        preconditioner   Cholesky;
+        nDirections           8;
+
+        tolerance        1e-12;
+        relTol           1e-4;
+
+        minIter          1;
+        maxIter          30;
+    }
+}
+
+flowSolver
+{
+    solver            GMRES;
+    GMRES
+    {
+        preconditioner    LUSGS;
+        maxIter           30;
+        nDirections           8;
+	    tolerance	  1e-12;
+        relTol      1e-4;
+    }
+}
+
+pseudoTime
+{
+    nPseudoCorr       50;
+    pseudoTol         1e-5;
+    pseudoTolRel      1e-3;
+    pseudoCoNum       1;
+    pseudoCoNumMax    10;
+}
+
+PISO
+{
+}
+
+PIMPLE
+{
+}
+
+// ************************************************************************* //
