@@ -1,0 +1,1887 @@
+From 8dba5619e921d94ed9a1ba1b1beed965eec1fa84 Mon Sep 17 00:00:00 2001
+From: Elwardi <elwardi.fadeli@tu-darmstadt.de>
+Date: Tue, 3 Sep 2024 13:56:27 +0200
+Subject: [PATCH 2/2] fix: port sparseMatrixSolvers to ESI
+
+---
+ of90/src/libs/sparseMatrixSolvers/Make/files  |   5 -
+ .../BCs/coupledT/coupledTFvPatchScalarField.H |   2 +-
+ .../coupled/BCs/regionCoupledAMIPolyPatch.C   |   2 +-
+ .../coupled/coupledSolver.C                   | 238 +++++++--------
+ .../coupled/coupledSolver.H                   |   4 +-
+ .../coupled/coupledSolverTemplates.C          |  30 +-
+ .../coupled/specialBoundariesA.H              | 286 +++++++++---------
+ .../coupled/specialBoundariesAlloc.H          | 204 ++++++-------
+ .../coupled/specialBoundariesB.H              |  24 +-
+ .../segregated/eigenSolver/eigenSolver.C      |  48 +--
+ .../eigenSolver/solvers/BiCGSTAB/eBiCGSTAB.C  |   4 +-
+ .../eigenSolver/solvers/GMRES/eGMRES.C        |   4 +-
+ .../segregated/eigenSolver/solvers/PCG/ePCG.C |   4 +-
+ .../eigenSolver/solvers/SparseLU/eSparseLU.C  |   2 +-
+ .../solvers/newEigenIterDirSolver.C           |   9 +-
+ .../segregated/hypreSolver/hypreSolver.C      |  80 ++---
+ .../segregated/hypreSolver/hypreSolver.H      |   4 +-
+ .../newHypreIJPreconditioner.C                |   9 +-
+ .../hypreSolver/solvers/newHypreIJSolver.C    |  44 ++-
+ .../segregated/petscSolver/petscSolver.C      |  72 ++---
+ .../segregated/petscSolver/petscSolver.H      |   4 +-
+ .../segregated/sparseSolver.C                 |   9 +-
+ 22 files changed, 543 insertions(+), 545 deletions(-)
+
+diff --git a/of90/src/libs/sparseMatrixSolvers/Make/files b/of90/src/libs/sparseMatrixSolvers/Make/files
+index 5c7fc1b..e713c66 100755
+--- a/of90/src/libs/sparseMatrixSolvers/Make/files
++++ b/of90/src/libs/sparseMatrixSolvers/Make/files
+@@ -29,11 +29,6 @@ segregated/eigenSolver/solvers/SparseLU/eSparseLU.C
+ 
+ segregated/petscSolver/petscSolvers.C
+ 
+-coupled/BCs/regionCoupledAMIPolyPatch.C
+-coupled/BCs/regionCoupledAMIPointPatch.C
+-coupled/BCs/regionCoupledAMIFvPatch.C
+-coupled/BCs/coupledT/coupledTFvPatchScalarField.C
+-
+ coupled/coupledSolver.C
+ 
+ sparseMatrixSolvers.C
+diff --git a/of90/src/libs/sparseMatrixSolvers/coupled/BCs/coupledT/coupledTFvPatchScalarField.H b/of90/src/libs/sparseMatrixSolvers/coupled/BCs/coupledT/coupledTFvPatchScalarField.H
+index d2a31b3..ef420c6 100755
+--- a/of90/src/libs/sparseMatrixSolvers/coupled/BCs/coupledT/coupledTFvPatchScalarField.H
++++ b/of90/src/libs/sparseMatrixSolvers/coupled/BCs/coupledT/coupledTFvPatchScalarField.H
+@@ -51,7 +51,7 @@ Description
+ 
+ #include "fixedValueFvPatchFields.H"
+ #include "regionCoupledBaseFvPatch.H"
+-#include "regionCoupledAMIFvPatch.H"
++//#include "regionCoupledAMIFvPatch.H"
+ #include "regionCoupledBase.H"
+ 
+ // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+diff --git a/of90/src/libs/sparseMatrixSolvers/coupled/BCs/regionCoupledAMIPolyPatch.C b/of90/src/libs/sparseMatrixSolvers/coupled/BCs/regionCoupledAMIPolyPatch.C
+index b3b391f..5069ff9 100755
+--- a/of90/src/libs/sparseMatrixSolvers/coupled/BCs/regionCoupledAMIPolyPatch.C
++++ b/of90/src/libs/sparseMatrixSolvers/coupled/BCs/regionCoupledAMIPolyPatch.C
+@@ -122,7 +122,7 @@ Foam::regionCoupledAMIPolyPatch::~regionCoupledAMIPolyPatch()
+ 
+ void Foam::regionCoupledAMIPolyPatch::initCalcGeometry(PstreamBuffers& pBufs)
+ {
+-    polyPatch::initCalcGeometry(pBufs);
++    //polyPatch::initCalcGeometry(pBufs);
+ }
+ 
+ 
+diff --git a/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolver.C b/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolver.C
+index 23cb44b..fd408b1 100755
+--- a/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolver.C
++++ b/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolver.C
+@@ -83,8 +83,8 @@ if (saveSystem_ && updateA_ && updatePrecondFreq_ < 1)
+  autoPrecond = true;
+   
+ // Init MPI if running in singleton.
+-if ( this->counterHypre_ + this->counterPetsc_ == 0 && !Pstream::parRun())
+-  MPI_Init(NULL,NULL);  
++//if ( this->counterHypre_ + this->counterPetsc_ == 0 && !Pstream::parRun())
++//  MPI_Init(NULL,NULL);  
+  
+ // Change prefix for multi-region cases
+ label nRegions(time.db().names("polyMesh").size());
+@@ -153,8 +153,8 @@ Foam::coupledSolver::~coupledSolver()
+    ierr = PetscFinalize();
+   
+   // Since we start MPI, we are also responsible to finalize it 
+-  if (this->counterHypre_ + this->counterPetsc_ == 0 && !Pstream::parRun())
+-    MPI_Finalize();           
++  //if (this->counterHypre_ + this->counterPetsc_ == 0 && !Pstream::parRun())
++  //  MPI_Finalize();           
+ }
+  
+ // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
+@@ -216,7 +216,7 @@ void Foam::coupledSolver::checkLimitations
+      {  
+        // No support for rotational transform in non-scalar variables  
+        if (
+-            refCast<const cyclicFvPatch>(pfvPatch).cyclicPatch().transform().rotates()
++            refCast<const cyclicFvPatch>(pfvPatch).cyclicPatch().transform() == coupledPolyPatch::ROTATIONAL
+           )
+        {
+            FatalErrorInFunction
+@@ -229,7 +229,7 @@ void Foam::coupledSolver::checkLimitations
+      {
+        // No support for rotational transform in non-scalar variables     
+        if (
+-            refCast<const processorCyclicFvPatch>(pfvPatch).procPolyPatch().transform().rotates()
++            refCast<const processorCyclicFvPatch>(pfvPatch).procPolyPatch().transform() == coupledPolyPatch::ROTATIONAL
+           )
+        {
+            FatalErrorInFunction
+@@ -238,21 +238,21 @@ void Foam::coupledSolver::checkLimitations
+            << exit(FatalError);
+        }      
+      }
+-     else if (isType<cyclicAMIFvPatch>(pfvPatch))
+-     {
+-       // No support for rotational transform in non-scalar variables     
+-       if (
+-            refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch().transform().rotates()
+-          )
+-       {
+-           FatalErrorInFunction
+-           << "No support in Petsc interface for patches of type cyclicAMI rotational, which is the type"
+-           << " of patch " << pfvPatch.name() << "."
+-           << exit(FatalError);
+-       } 
+-       
+-       isThereCyclicAMI_ = true;      
+-     }
++     ///else if (isType<cyclicAMIFvPatch>(pfvPatch))
++     ///{
++     ///  // No support for rotational transform in non-scalar variables     
++     ///  if (
++     ///       refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch().transform() == coupledPolyPatch::ROTATIONAL
++     ///     )
++     ///  {
++     ///      FatalErrorInFunction
++     ///      << "No support in Petsc interface for patches of type cyclicAMI rotational, which is the type"
++     ///      << " of patch " << pfvPatch.name() << "."
++     ///      << exit(FatalError);
++     ///  } 
++     ///  
++     ///  isThereCyclicAMI_ = true;      
++     ///}
+      else if (isType<processorFvPatch>(pfvPatch))
+      {
+        // Full support
+@@ -983,108 +983,108 @@ void Foam::coupledSolver::computeAllocationPetsc
+         }
+       }
+       // cyclicAMI
+-      else if (isType<cyclicAMIFvPatch>(pfvPatch))
+-      {       
+-       const cyclicAMIPolyPatch& camipp = refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch();
+-       const cyclicAMIPolyPatch& neicamipp = camipp.nbrPatch();
+-       
+-       const labelList& ownFC = camipp.faceCells();   
++      //else if (isType<cyclicAMIFvPatch>(pfvPatch))
++      //{       
++      // const cyclicAMIPolyPatch& camipp = refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch();
++      // const cyclicAMIPolyPatch& neicamipp = camipp.nbrPatch();
++      // 
++      // const labelList& ownFC = camipp.faceCells();   
+      
+-       if (camipp.owner())
+-       {      
+-         forAll(camipp.AMIs(), i)
+-         {
+-           const labelListList& srcAd = camipp.AMIs()[i].srcAddress();
++      // if (camipp.owner())
++      // {      
++      //   forAll(camipp.AMIs(), i)
++      //   {
++      //     const labelListList& srcAd = camipp.AMIs()[i].srcAddress();
+  
+-           // Each patch of the AMI interface in a different processor
+-           if (camipp.AMIs()[i].singlePatchProc() == -1) 
+-           {            
+-             forAll(srcAd, facei)
+-             {
+-               forAll(srcAd[facei], kk)
+-               {
+-                 if (camipp.AMIs()[i].applyLowWeightCorrection())
+-                 {            
+-                   if (camipp.AMIs()[i].srcWeightsSum()[facei] < camipp.AMIs()[i].lowWeightCorrection())
+-                   {
+-                     maxInProcFaces[ownFC[facei]] += 1;
+-                   }
+-                   else
+-                   {
+-                     maxOutProcFaces[ownFC[facei]] += 1;                 
+-                   }
+-                 }
+-                 else
+-                 {
+-                   maxOutProcFaces[ownFC[facei]] += 1;                 
+-                 }
+-               }            
+-             }
+-             
+-           }
+-           // Both patches of the AMI interface in same processor
+-           else
+-           {
+-             forAll(srcAd, facei)
+-             {
+-               forAll(srcAd[facei], kk)
+-               {
+-                 maxInProcFaces[ownFC[facei]] += 1;
+-               }            
+-             }
+-           }
++      //     // Each patch of the AMI interface in a different processor
++      //     if (camipp.AMIs()[i].singlePatchProc() == -1) 
++      //     {            
++      //       forAll(srcAd, facei)
++      //       {
++      //         forAll(srcAd[facei], kk)
++      //         {
++      //           if (camipp.AMIs()[i].applyLowWeightCorrection())
++      //           {            
++      //             if (camipp.AMIs()[i].srcWeightsSum()[facei] < camipp.AMIs()[i].lowWeightCorrection())
++      //             {
++      //               maxInProcFaces[ownFC[facei]] += 1;
++      //             }
++      //             else
++      //             {
++      //               maxOutProcFaces[ownFC[facei]] += 1;                 
++      //             }
++      //           }
++      //           else
++      //           {
++      //             maxOutProcFaces[ownFC[facei]] += 1;                 
++      //           }
++      //         }            
++      //       }
++      //       
++      //     }
++      //     // Both patches of the AMI interface in same processor
++      //     else
++      //     {
++      //       forAll(srcAd, facei)
++      //       {
++      //         forAll(srcAd[facei], kk)
++      //         {
++      //           maxInProcFaces[ownFC[facei]] += 1;
++      //         }            
++      //       }
++      //     }
+    
+-        }   
+-           
+-       }  
+-       else
+-       {      
+-         forAll(neicamipp.AMIs(), i)
+-         {
+-           const labelListList& tgtAd = neicamipp.AMIs()[i].tgtAddress();
+-      
+-           // Each patch of the AMI interface in a different processor
+-           if (neicamipp.AMIs()[i].singlePatchProc() == -1) 
+-           {             
+-             forAll(tgtAd, facei)
+-             {
+-               forAll(tgtAd[facei], kk)
+-               {
+-                 if (neicamipp.AMIs()[i].applyLowWeightCorrection())
+-                 {           
+-                   if (neicamipp.AMIs()[i].tgtWeightsSum()[facei] < neicamipp.AMIs()[i].lowWeightCorrection())
+-                   {
+-                     maxInProcFaces[ownFC[facei]] += 1;
+-                   }
+-                   else
+-                   {                 
+-                     maxOutProcFaces[ownFC[facei]] += 1;
+-                   }
+-                 }
+-                 else
+-                 {                 
+-                   maxOutProcFaces[ownFC[facei]] += 1;
+-                 }
+-               }            
+-             }
+-             
+-           }
+-           // Both patches of the AMI interface in same processor
+-           else
+-           {
+-             forAll(tgtAd, facei)
+-             {
+-               forAll(tgtAd[facei], kk)
+-               {
+-                 maxInProcFaces[ownFC[facei]] += 1;
+-               }           
+-             }
+-           }
++      //  }   
++      //     
++      // }  
++      // else
++      // {      
++      //   forAll(neicamipp.AMIs(), i)
++      //   {
++      //     const labelListList& tgtAd = neicamipp.AMIs()[i].tgtAddress();
++      //
++      //     // Each patch of the AMI interface in a different processor
++      //     if (neicamipp.AMIs()[i].singlePatchProc() == -1) 
++      //     {             
++      //       forAll(tgtAd, facei)
++      //       {
++      //         forAll(tgtAd[facei], kk)
++      //         {
++      //           if (neicamipp.AMIs()[i].applyLowWeightCorrection())
++      //           {           
++      //             if (neicamipp.AMIs()[i].tgtWeightsSum()[facei] < neicamipp.AMIs()[i].lowWeightCorrection())
++      //             {
++      //               maxInProcFaces[ownFC[facei]] += 1;
++      //             }
++      //             else
++      //             {                 
++      //               maxOutProcFaces[ownFC[facei]] += 1;
++      //             }
++      //           }
++      //           else
++      //           {                 
++      //             maxOutProcFaces[ownFC[facei]] += 1;
++      //           }
++      //         }            
++      //       }
++      //       
++      //     }
++      //     // Both patches of the AMI interface in same processor
++      //     else
++      //     {
++      //       forAll(tgtAd, facei)
++      //       {
++      //         forAll(tgtAd[facei], kk)
++      //         {
++      //           maxInProcFaces[ownFC[facei]] += 1;
++      //         }           
++      //       }
++      //     }
+    
+-        }   
+-           
+-       }   
+-      }
++      //  }   
++      //     
++      // }   
++      //}
+       // processor and processorCyclic
+       else
+       {
+diff --git a/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolver.H b/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolver.H
+index a949923..e196fb3 100755
+--- a/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolver.H
++++ b/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolver.H
+@@ -43,10 +43,10 @@ Description
+ #include "processorFvPatch.H"
+ #include "processorCyclicFvPatch.H"
+ #include "cyclicFvPatch.H"
+-#include "cyclicAMIFvPatch.H"   
++//#include "cyclicAMIFvPatch.H"   
+ #include "cyclicFvPatchField.H" 
+ 
+-#include "regionCoupledAMIFvPatch.H" 
++//#include "regionCoupledAMIFvPatch.H" 
+ #include "regionCoupledBaseFvPatch.H"
+ #include "coupledTFvPatchScalarField.H"
+  
+diff --git a/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolverTemplates.C b/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolverTemplates.C
+index 8899f76..fcc0cbc 100755
+--- a/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolverTemplates.C
++++ b/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolverTemplates.C
+@@ -548,7 +548,7 @@ void Foam::coupledSolver::assemblePetscAb
+      // if the other half of a given AMI was sent to another processor. In pratice, nothing
+      // happens bellow if camipp is zero-sized.
+      const cyclicAMIPolyPatch& camipp = refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch();
+-     const cyclicAMIPolyPatch& neicamipp = camipp.nbrPatch();
++     const cyclicAMIPolyPatch& neicamipp = camipp.neighbPatch();
+      
+      const labelList& ownFC = camipp.faceCells();   
+      const labelList& neiFC = neicamipp.faceCells();
+@@ -560,15 +560,15 @@ void Foam::coupledSolver::assemblePetscAb
+      // from one of them, which is considered the "owner" patch.
+      if (camipp.owner())
+      {      
+-       forAll(camipp.AMIs(), i)
++       //forAll(camipp.AMIs(), i)
+        {
+          // Distribute faceCells of neighbour (tgt) patch if parallel. We get
+          // the tgt faceCells transfered to the proc where the src patch (camipp) is.
+-         if (camipp.AMIs()[i].singlePatchProc() == -1) 
+-           camipp.AMIs()[i].tgtMap().distribute(neiFCproc);   
++         if (camipp.AMI().singlePatchProc() == -1) 
++           camipp.AMI().tgtMap().distribute(neiFCproc);   
+      
+-         const labelListList& srcAd = camipp.AMIs()[i].srcAddress();
+-         const scalarListList& srcW = camipp.AMIs()[i].srcWeights();
++         const labelListList& srcAd = camipp.AMI().srcAddress();
++         const scalarListList& srcW = camipp.AMI().srcWeights();
+          forAll(srcAd, k)
+          {             
+            // Matrix of coefs - Diagonal  
+@@ -578,10 +578,10 @@ void Foam::coupledSolver::assemblePetscAb
+          
+            // If the applyLowWeightCorrection option is enabled, the zero-gradient
+            // condition must be applied when the weightSum is less than a treshold.  
+-           if (camipp.AMIs()[i].applyLowWeightCorrection())
++           if (camipp.AMI().applyLowWeightCorrection())
+            {
+              // Apply implicit zero-gradient
+-             if (camipp.AMIs()[i].srcWeightsSum()[k] < camipp.AMIs()[i].lowWeightCorrection())
++             if (camipp.AMI().srcWeightsSum()[k] < camipp.AMI().lowWeightCorrection())
+              {
+                col = ilower + ownFC[k] + colBias;
+                double v = -bC[k];
+@@ -616,15 +616,15 @@ void Foam::coupledSolver::assemblePetscAb
+      }
+      else
+      { 
+-      forAll(neicamipp.AMIs(), i)
++      //forAll(neicamipp.AMIs(), i)
+        {
+          // Distribute faceCells of neighbour (src) patch if parallel. We get
+          // the src faceCells transfered to the proc where the tgt patch (camipp) is
+-         if (neicamipp.AMIs()[i].singlePatchProc() == -1) 
+-           neicamipp.AMIs()[i].srcMap().distribute(neiFCproc);   
++         if (neicamipp.AMI().singlePatchProc() == -1) 
++           neicamipp.AMI().srcMap().distribute(neiFCproc);   
+        
+-         const labelListList& tgtAd = neicamipp.AMIs()[i].tgtAddress();
+-         const scalarListList& tgtW = neicamipp.AMIs()[i].tgtWeights();
++         const labelListList& tgtAd = neicamipp.AMI().tgtAddress();
++         const scalarListList& tgtW = neicamipp.AMI().tgtWeights();
+          forAll(tgtAd, k)
+          {                         
+            // Matrix of coefs - Diagonal 
+@@ -634,10 +634,10 @@ void Foam::coupledSolver::assemblePetscAb
+                      
+            // If the applyLowWeightCorrection option is enabled, the zero-gradient
+            // condition must be applied when the weightSum is less than a treshold.  
+-           if (neicamipp.AMIs()[i].applyLowWeightCorrection())
++           if (neicamipp.AMI().applyLowWeightCorrection())
+            {
+              // Apply implicit zero-gradient
+-             if (neicamipp.AMIs()[i].tgtWeightsSum()[k] < neicamipp.AMIs()[i].lowWeightCorrection())
++             if (neicamipp.AMI().tgtWeightsSum()[k] < neicamipp.AMI().lowWeightCorrection())
+              {
+                col = ilower + ownFC[k] + colBias;
+                double v = -bC[k];
+diff --git a/of90/src/libs/sparseMatrixSolvers/coupled/specialBoundariesA.H b/of90/src/libs/sparseMatrixSolvers/coupled/specialBoundariesA.H
+index 91dc9d3..0466a89 100755
+--- a/of90/src/libs/sparseMatrixSolvers/coupled/specialBoundariesA.H
++++ b/of90/src/libs/sparseMatrixSolvers/coupled/specialBoundariesA.H
+@@ -2,146 +2,146 @@
+ // not contribute twice to the matrix of coeffs
+ 
+ // Special BC for temperature-temperature coupling 
+-if (!bMesh[patchI].coupled())
+-{
+-  // First check if the patch is of the specified type and the if var is scalar (temperature is scalar)
+-  if (isType<regionCoupledAMIFvPatch>(pfvPatch) && varInfo[rowVarID].typeV == ftscalar)
+-  {     
+-    // Now check if field BC is coupledAMI                
+-    if ( isType<coupledTFvPatchScalarField>( varScalarList[varInfo[rowVarID].localID]->boundaryField()[patchI] ) )
+-    { 
+-     // camipp and neicampi always lay in the same processor, but one of them can be empty
+-     // if the other half of a given AMI was sent to another processor. In pratice, nothing
+-     // happens bellow if camipp is zero-sized.
+-     const regionCoupledBaseFvPatch& camipp = refCast<const regionCoupledAMIFvPatch>(pfvPatch);     
+-     const regionCoupledBaseFvPatch& neicamipp = refCast<const regionCoupledAMIFvPatch>(pfvPatch).neighbFvPatch();   
+-     
+-     const labelList& ownFC = camipp.faceCells();   
+-     const labelList& neiFC = neicamipp.faceCells();    
+-      
+-     const coupledTFvPatchScalarField& camiPatchField = refCast<const coupledTFvPatchScalarField>
+-     (
+-      varScalarList[varInfo[rowVarID].localID]->boundaryField()[patchI]
+-     );  
+-     
+-     // The ID of T from the neigb region
+-     label bCol = findField(camiPatchField.nbrFieldName(), camiPatchField.nbrMeshName());
+- 
+-     // The column bias
+-     label fRow = varInfo[bCol].firstElem;
+- 
+-     // The neiFC gets ilower from the proc/mesh where neicamipp is. This is ensured after
+-     // the call to distribute(neiFCproc).
+-     labelList neiFCproc(neiFC+this->sharedData[meshList[varInfo[bCol].meshID].ID].ilower); 
+-      
+-     // AMIs are shared by at least 2 patches, but the AMI interpolator is only accessible
+-     // from one of them, which is considered the "owner" patch.
+-     if (camipp.owner())
+-     {      
+-         // Distribute faceCells of neighbour (tgt) patch if parallel. We get
+-         // the tgt faceCells transfered to the proc where the src patch (camipp) is.
+-         if (camipp.AMI().singlePatchProc() == -1) 
+-          camipp.AMI().tgtMap().distribute(neiFCproc); 
+-         
+-         const labelListList& srcAd = camipp.AMI().srcAddress();
+-         const scalarListList& srcW = camipp.AMI().srcWeights();
+-         forAll(srcAd, k)
+-         {             
+-           // Matrix of coefs - Diagonal  
+-           row = ilower + ownFC[k] + rowBias; 
+-           col = ilower + ownFC[k] + colBias;  
+-           ierr = MatSetValues(A,1,&row,1,&col,&iC[k],ADD_VALUES);CHKERRV(ierr); 
+-         
+-           // If the applyLowWeightCorrection option is enabled, the zero-gradient
+-           // condition must be applied when the weightSum is less than a treshold.  
+-           if (camipp.AMI().applyLowWeightCorrection())
+-           {
+-             // Apply implicit zero-gradient
+-             if (camipp.AMI().srcWeightsSum()[k] < camipp.AMI().lowWeightCorrection())
+-             {
+-               col = ilower + ownFC[k] + colBias;
+-               double v = -bC[k];
+-               ierr = MatSetValues(A,1,&row,1,&col,&v,ADD_VALUES);CHKERRV(ierr); 
+-             }
+-             // Distribute weighted coefficients 
+-             else
+-             {
+-               // Matrix of coefs - off-diagonal
+-               forAll(srcAd[k], kk)
+-               {                    
+-                col = neiFCproc[srcAd[k][kk]] + fRow;  
+-                double v = -bC[k]*srcW[k][kk];
+-                ierr = MatSetValues(A,1,&row,1,&col,&v,ADD_VALUES);CHKERRV(ierr);         
+-               }
+-             }                                           
+-           }
+-           else
+-           {
+-              // Matrix of coefs - off-diagonal
+-              forAll(srcAd[k], kk)
+-              {                        
+-               col = neiFCproc[srcAd[k][kk]] + fRow; 
+-               double v = -bC[k]*srcW[k][kk];
+-               ierr = MatSetValues(A,1,&row,1,&col,&v,ADD_VALUES);CHKERRV(ierr);           
+-              }   
+-           }
+-         }
+-     }
+-     else
+-     {        
+-         // Distribute faceCells of neighbour (src) patch if parallel. We get
+-         // the src faceCells transfered to the proc where the tgt patch (camipp) is
+-         if (neicamipp.AMI().singlePatchProc() == -1)
+-           neicamipp.AMI().srcMap().distribute(neiFCproc);  
+-       
+-         const labelListList& tgtAd = neicamipp.AMI().tgtAddress();
+-         const scalarListList& tgtW = neicamipp.AMI().tgtWeights();
+-         forAll(tgtAd, k)
+-         {                         
+-           // Matrix of coefs - Diagonal 
+-           row = ilower + ownFC[k] + rowBias; 
+-           col = ilower + ownFC[k] + colBias;     
+-           ierr = MatSetValues(A,1,&row,1,&col,&iC[k],ADD_VALUES);CHKERRV(ierr);            
+-                     
+-           // If the applyLowWeightCorrection option is enabled, the zero-gradient
+-           // condition must be applied when the weightSum is less than a treshold.  
+-           if (neicamipp.AMI().applyLowWeightCorrection())
+-           {
+-             // Apply implicit zero-gradient
+-             if (neicamipp.AMI().tgtWeightsSum()[k] < neicamipp.AMI().lowWeightCorrection())
+-             {
+-               col = ilower + ownFC[k] + colBias;
+-               double v = -bC[k];
+-               ierr = MatSetValues(A,1,&row,1,&col,&v,ADD_VALUES);CHKERRV(ierr); 
+-             }
+-             // Distribute weighted coefficients 
+-             else
+-             {
+-               // Matrix of coefs - off-diagonal
+-               forAll(tgtAd[k], kk)
+-               {                
+-                col = neiFCproc[tgtAd[k][kk]] + fRow; 
+-                double v = -bC[k]*tgtW[k][kk];
+-                ierr = MatSetValues(A,1,&row,1,&col,&v,ADD_VALUES);CHKERRV(ierr);          
+-               }  
+-             }                                           
+-           }
+-           else
+-           {
+-              // Matrix of coefs - off-diagonal
+-              forAll(tgtAd[k], kk)
+-              {                
+-               col = neiFCproc[tgtAd[k][kk]] + fRow; 
+-               double v = -bC[k]*tgtW[k][kk];
+-               ierr = MatSetValues(A,1,&row,1,&col,&v,ADD_VALUES);CHKERRV(ierr);
+-              }   
+-           }              
+-         }       
+-    }
+-    
+-    // If the BC is of the specified type, then proceed to next BC. Not adding 'continue' 
+-    // would make us enter again in case 'non-coupled'.
+-    continue;
+-   }   
+- }  
+-}
++//if (!bMesh[patchI].coupled())
++//{
++//  // First check if the patch is of the specified type and the if var is scalar (temperature is scalar)
++//  if (isType<regionCoupledAMIFvPatch>(pfvPatch) && varInfo[rowVarID].typeV == ftscalar)
++//  {     
++//    // Now check if field BC is coupledAMI                
++//    if ( isType<coupledTFvPatchScalarField>( varScalarList[varInfo[rowVarID].localID]->boundaryField()[patchI] ) )
++//    { 
++//     // camipp and neicampi always lay in the same processor, but one of them can be empty
++//     // if the other half of a given AMI was sent to another processor. In pratice, nothing
++//     // happens bellow if camipp is zero-sized.
++//     const regionCoupledBaseFvPatch& camipp = refCast<const regionCoupledAMIFvPatch>(pfvPatch);     
++//     const regionCoupledBaseFvPatch& neicamipp = refCast<const regionCoupledAMIFvPatch>(pfvPatch).neighbFvPatch();   
++//     
++//     const labelList& ownFC = camipp.faceCells();   
++//     const labelList& neiFC = neicamipp.faceCells();    
++//      
++//     const coupledTFvPatchScalarField& camiPatchField = refCast<const coupledTFvPatchScalarField>
++//     (
++//      varScalarList[varInfo[rowVarID].localID]->boundaryField()[patchI]
++//     );  
++//     
++//     // The ID of T from the neigb region
++//     label bCol = findField(camiPatchField.nbrFieldName(), camiPatchField.nbrMeshName());
++// 
++//     // The column bias
++//     label fRow = varInfo[bCol].firstElem;
++// 
++//     // The neiFC gets ilower from the proc/mesh where neicamipp is. This is ensured after
++//     // the call to distribute(neiFCproc).
++//     labelList neiFCproc(neiFC+this->sharedData[meshList[varInfo[bCol].meshID].ID].ilower); 
++//      
++//     // AMIs are shared by at least 2 patches, but the AMI interpolator is only accessible
++//     // from one of them, which is considered the "owner" patch.
++//     if (camipp.owner())
++//     {      
++//         // Distribute faceCells of neighbour (tgt) patch if parallel. We get
++//         // the tgt faceCells transfered to the proc where the src patch (camipp) is.
++//         if (camipp.AMI().singlePatchProc() == -1) 
++//          camipp.AMI().tgtMap().distribute(neiFCproc); 
++//         
++//         const labelListList& srcAd = camipp.AMI().srcAddress();
++//         const scalarListList& srcW = camipp.AMI().srcWeights();
++//         forAll(srcAd, k)
++//         {             
++//           // Matrix of coefs - Diagonal  
++//           row = ilower + ownFC[k] + rowBias; 
++//           col = ilower + ownFC[k] + colBias;  
++//           ierr = MatSetValues(A,1,&row,1,&col,&iC[k],ADD_VALUES);CHKERRV(ierr); 
++//         
++//           // If the applyLowWeightCorrection option is enabled, the zero-gradient
++//           // condition must be applied when the weightSum is less than a treshold.  
++//           if (camipp.AMI().applyLowWeightCorrection())
++//           {
++//             // Apply implicit zero-gradient
++//             if (camipp.AMI().srcWeightsSum()[k] < camipp.AMI().lowWeightCorrection())
++//             {
++//               col = ilower + ownFC[k] + colBias;
++//               double v = -bC[k];
++//               ierr = MatSetValues(A,1,&row,1,&col,&v,ADD_VALUES);CHKERRV(ierr); 
++//             }
++//             // Distribute weighted coefficients 
++//             else
++//             {
++//               // Matrix of coefs - off-diagonal
++//               forAll(srcAd[k], kk)
++//               {                    
++//                col = neiFCproc[srcAd[k][kk]] + fRow;  
++//                double v = -bC[k]*srcW[k][kk];
++//                ierr = MatSetValues(A,1,&row,1,&col,&v,ADD_VALUES);CHKERRV(ierr);         
++//               }
++//             }                                           
++//           }
++//           else
++//           {
++//              // Matrix of coefs - off-diagonal
++//              forAll(srcAd[k], kk)
++//              {                        
++//               col = neiFCproc[srcAd[k][kk]] + fRow; 
++//               double v = -bC[k]*srcW[k][kk];
++//               ierr = MatSetValues(A,1,&row,1,&col,&v,ADD_VALUES);CHKERRV(ierr);           
++//              }   
++//           }
++//         }
++//     }
++//     else
++//     {        
++//         // Distribute faceCells of neighbour (src) patch if parallel. We get
++//         // the src faceCells transfered to the proc where the tgt patch (camipp) is
++//         if (neicamipp.AMI().singlePatchProc() == -1)
++//           neicamipp.AMI().srcMap().distribute(neiFCproc);  
++//       
++//         const labelListList& tgtAd = neicamipp.AMI().tgtAddress();
++//         const scalarListList& tgtW = neicamipp.AMI().tgtWeights();
++//         forAll(tgtAd, k)
++//         {                         
++//           // Matrix of coefs - Diagonal 
++//           row = ilower + ownFC[k] + rowBias; 
++//           col = ilower + ownFC[k] + colBias;     
++//           ierr = MatSetValues(A,1,&row,1,&col,&iC[k],ADD_VALUES);CHKERRV(ierr);            
++//                     
++//           // If the applyLowWeightCorrection option is enabled, the zero-gradient
++//           // condition must be applied when the weightSum is less than a treshold.  
++//           if (neicamipp.AMI().applyLowWeightCorrection())
++//           {
++//             // Apply implicit zero-gradient
++//             if (neicamipp.AMI().tgtWeightsSum()[k] < neicamipp.AMI().lowWeightCorrection())
++//             {
++//               col = ilower + ownFC[k] + colBias;
++//               double v = -bC[k];
++//               ierr = MatSetValues(A,1,&row,1,&col,&v,ADD_VALUES);CHKERRV(ierr); 
++//             }
++//             // Distribute weighted coefficients 
++//             else
++//             {
++//               // Matrix of coefs - off-diagonal
++//               forAll(tgtAd[k], kk)
++//               {                
++//                col = neiFCproc[tgtAd[k][kk]] + fRow; 
++//                double v = -bC[k]*tgtW[k][kk];
++//                ierr = MatSetValues(A,1,&row,1,&col,&v,ADD_VALUES);CHKERRV(ierr);          
++//               }  
++//             }                                           
++//           }
++//           else
++//           {
++//              // Matrix of coefs - off-diagonal
++//              forAll(tgtAd[k], kk)
++//              {                
++//               col = neiFCproc[tgtAd[k][kk]] + fRow; 
++//               double v = -bC[k]*tgtW[k][kk];
++//               ierr = MatSetValues(A,1,&row,1,&col,&v,ADD_VALUES);CHKERRV(ierr);
++//              }   
++//           }              
++//         }       
++//    }
++//    
++//    // If the BC is of the specified type, then proceed to next BC. Not adding 'continue' 
++//    // would make us enter again in case 'non-coupled'.
++//    continue;
++//   }   
++// }  
++//}
+diff --git a/of90/src/libs/sparseMatrixSolvers/coupled/specialBoundariesAlloc.H b/of90/src/libs/sparseMatrixSolvers/coupled/specialBoundariesAlloc.H
+index 1514eab..5afb49d 100755
+--- a/of90/src/libs/sparseMatrixSolvers/coupled/specialBoundariesAlloc.H
++++ b/of90/src/libs/sparseMatrixSolvers/coupled/specialBoundariesAlloc.H
+@@ -2,105 +2,105 @@
+ // not contribute twice to the matrix of coeffs
+ 
+ // Special BC for temperature-temperature coupling 
+-if (!bMesh[patchI].coupled())
+-{
+-  // First check if the patch is of the specified type 
+-  // Note: here we consider that all fvPatchFields in this patch will couple to other field (over-sized)  
+-  if (isType<regionCoupledAMIFvPatch>(bMesh[patchI]))
+-  {           
+-     const fvPatch& pfvPatch = bMesh[patchI];  
+-        
+-     const regionCoupledBaseFvPatch& camipp = refCast<const regionCoupledAMIFvPatch>(pfvPatch);     
+-     const regionCoupledBaseFvPatch& neicamipp = refCast<const regionCoupledAMIFvPatch>(pfvPatch).neighbFvPatch();   
+-     
+-     const labelList& ownFC = camipp.faceCells();   
+-          
+-     if (camipp.owner())
+-     {                       
+-       const labelListList& srcAd = camipp.AMI().srcAddress();
+- 
+-       // Each patch of the AMI interface in a different processor
+-       if (camipp.AMI().singlePatchProc() == -1) 
+-       {            
+-         forAll(srcAd, facei)
+-         {
+-           forAll(srcAd[facei], kk)
+-           {
+-             if (camipp.AMI().applyLowWeightCorrection())
+-             {            
+-               if (camipp.AMI().srcWeightsSum()[facei] < camipp.AMI().lowWeightCorrection())
+-               {
+-                 maxInProcFaces[ownFC[facei]] += 1;
+-               }
+-               else
+-               {
+-                 maxOutProcFaces[ownFC[facei]] += 1;                 
+-               }
+-             }
+-             else
+-             {
+-               maxOutProcFaces[ownFC[facei]] += 1;                 
+-             }
+-           }            
+-         }      
+-       }
+-       // Both patches of the AMI interface in same processor
+-       else
+-       {
+-         forAll(srcAd, facei)
+-         {
+-           forAll(srcAd[facei], kk)
+-           {
+-             maxInProcFaces[ownFC[facei]] += 1;
+-           }            
+-         }
+-       }      
+-     }  
+-     else
+-     {      
+-       const labelListList& tgtAd = neicamipp.AMI().tgtAddress();
+-      
+-       // Each patch of the AMI interface in a different processor
+-       if (neicamipp.AMI().singlePatchProc() == -1) 
+-       {             
+-         forAll(tgtAd, facei)
+-         {
+-           forAll(tgtAd[facei], kk)
+-           {
+-             if (neicamipp.AMI().applyLowWeightCorrection())
+-             {           
+-               if (neicamipp.AMI().tgtWeightsSum()[facei] < neicamipp.AMI().lowWeightCorrection())
+-               {
+-                 maxInProcFaces[ownFC[facei]] += 1;
+-               }
+-               else
+-               {                 
+-                 maxOutProcFaces[ownFC[facei]] += 1;
+-               }
+-             }
+-             else
+-             {                 
+-               maxOutProcFaces[ownFC[facei]] += 1;
+-             }
+-           }            
+-         }      
+-       }
+-       // Both patches of the AMI interface in same processor
+-       else
+-       {
+-         forAll(tgtAd, facei)
+-         {
+-           forAll(tgtAd[facei], kk)
+-           {
+-             maxInProcFaces[ownFC[facei]] += 1;
+-           }           
+-         }
+-       }      
+-     }   
+-       
+-  // If the BC is of the specified type, then proceed to next BC. Not adding 'continue' 
+-  // would make us enter again in case 'non-coupled'.
+-  continue;
+-    
+- }  
+-}
++//if (!bMesh[patchI].coupled())
++//{
++//  // First check if the patch is of the specified type 
++//  // Note: here we consider that all fvPatchFields in this patch will couple to other field (over-sized)  
++//  if (isType<regionCoupledAMIFvPatch>(bMesh[patchI]))
++//  {           
++//     const fvPatch& pfvPatch = bMesh[patchI];  
++//        
++//     const regionCoupledBaseFvPatch& camipp = refCast<const regionCoupledAMIFvPatch>(pfvPatch);     
++//     const regionCoupledBaseFvPatch& neicamipp = refCast<const regionCoupledAMIFvPatch>(pfvPatch).neighbFvPatch();   
++//     
++//     const labelList& ownFC = camipp.faceCells();   
++//          
++//     if (camipp.owner())
++//     {                       
++//       const labelListList& srcAd = camipp.AMI().srcAddress();
++// 
++//       // Each patch of the AMI interface in a different processor
++//       if (camipp.AMI().singlePatchProc() == -1) 
++//       {            
++//         forAll(srcAd, facei)
++//         {
++//           forAll(srcAd[facei], kk)
++//           {
++//             if (camipp.AMI().applyLowWeightCorrection())
++//             {            
++//               if (camipp.AMI().srcWeightsSum()[facei] < camipp.AMI().lowWeightCorrection())
++//               {
++//                 maxInProcFaces[ownFC[facei]] += 1;
++//               }
++//               else
++//               {
++//                 maxOutProcFaces[ownFC[facei]] += 1;                 
++//               }
++//             }
++//             else
++//             {
++//               maxOutProcFaces[ownFC[facei]] += 1;                 
++//             }
++//           }            
++//         }      
++//       }
++//       // Both patches of the AMI interface in same processor
++//       else
++//       {
++//         forAll(srcAd, facei)
++//         {
++//           forAll(srcAd[facei], kk)
++//           {
++//             maxInProcFaces[ownFC[facei]] += 1;
++//           }            
++//         }
++//       }      
++//     }  
++//     else
++//     {      
++//       const labelListList& tgtAd = neicamipp.AMI().tgtAddress();
++//      
++//       // Each patch of the AMI interface in a different processor
++//       if (neicamipp.AMI().singlePatchProc() == -1) 
++//       {             
++//         forAll(tgtAd, facei)
++//         {
++//           forAll(tgtAd[facei], kk)
++//           {
++//             if (neicamipp.AMI().applyLowWeightCorrection())
++//             {           
++//               if (neicamipp.AMI().tgtWeightsSum()[facei] < neicamipp.AMI().lowWeightCorrection())
++//               {
++//                 maxInProcFaces[ownFC[facei]] += 1;
++//               }
++//               else
++//               {                 
++//                 maxOutProcFaces[ownFC[facei]] += 1;
++//               }
++//             }
++//             else
++//             {                 
++//               maxOutProcFaces[ownFC[facei]] += 1;
++//             }
++//           }            
++//         }      
++//       }
++//       // Both patches of the AMI interface in same processor
++//       else
++//       {
++//         forAll(tgtAd, facei)
++//         {
++//           forAll(tgtAd[facei], kk)
++//           {
++//             maxInProcFaces[ownFC[facei]] += 1;
++//           }           
++//         }
++//       }      
++//     }   
++//       
++//  // If the BC is of the specified type, then proceed to next BC. Not adding 'continue' 
++//  // would make us enter again in case 'non-coupled'.
++//  continue;
++//    
++// }  
++//}
+diff --git a/of90/src/libs/sparseMatrixSolvers/coupled/specialBoundariesB.H b/of90/src/libs/sparseMatrixSolvers/coupled/specialBoundariesB.H
+index c234c11..fc4bf1b 100755
+--- a/of90/src/libs/sparseMatrixSolvers/coupled/specialBoundariesB.H
++++ b/of90/src/libs/sparseMatrixSolvers/coupled/specialBoundariesB.H
+@@ -2,15 +2,15 @@
+ // is explicit 
+ 
+ // Special BC for temperature-temperature coupling 
+-if (!bMesh[patchI].coupled())
+-{
+-  // First check if the patch is of the specified type and the if var is scalar (temperature is scalar)
+-  if (isType<regionCoupledAMIFvPatch>(bMesh[patchI]) && varInfo[rowVarID].typeV == ftscalar)
+-  {     
+-    // Now check if field BC is coupledAMI                
+-    if ( isType<coupledTFvPatchScalarField>( varScalarList[varInfo[rowVarID].localID]->boundaryField()[patchI] ) )
+-    { 
+-      continue;
+-    }
+-  }
+-}
++//if (!bMesh[patchI].coupled())
++//{
++//  // First check if the patch is of the specified type and the if var is scalar (temperature is scalar)
++//  if (isType<regionCoupledAMIFvPatch>(bMesh[patchI]) && varInfo[rowVarID].typeV == ftscalar)
++//  {     
++//    // Now check if field BC is coupledAMI                
++//    if ( isType<coupledTFvPatchScalarField>( varScalarList[varInfo[rowVarID].localID]->boundaryField()[patchI] ) )
++//    { 
++//      continue;
++//    }
++//  }
++//}
+diff --git a/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/eigenSolver.C b/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/eigenSolver.C
+index 479bcc5..55b4678 100755
+--- a/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/eigenSolver.C
++++ b/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/eigenSolver.C
+@@ -146,7 +146,7 @@ void Foam::eigenSolver<Type>::checkLimitations
+      {  
+        // Partial support for rotational transform in non-scalar variables (coupling is explicit)     
+        if (!isScalar &&
+-            refCast<const cyclicFvPatch>(pfvPatch).cyclicPatch().transform().rotates()
++            refCast<const cyclicFvPatch>(pfvPatch).cyclicPatch().transform() == coupledPolyPatch::ROTATIONAL
+           )
+        {
+            WarningInFunction
+@@ -161,7 +161,7 @@ void Foam::eigenSolver<Type>::checkLimitations
+      {
+        // No support for rotational transform in non-scalar variables     
+        if (!isScalar &&
+-            refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch().transform().rotates()
++            refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch().transform() == coupledPolyPatch::ROTATIONAL
+           )
+        {
+            FatalErrorInFunction
+@@ -270,6 +270,7 @@ void Foam::eigenSolver<Type>::solveReuse
+       
+    matrix.initMatrixInterfaces
+    (
++     true,
+      bouCoeffsCmpt,
+      interfaces,
+      psiCmpt,
+@@ -279,11 +280,13 @@ void Foam::eigenSolver<Type>::solveReuse
+ 
+    matrix.updateMatrixInterfaces
+    (
++     true,
+      bouCoeffsCmpt,
+      interfaces,
+      psiCmpt,
+      sourceCmpt,
+-     cmpt
++     cmpt,
++     0
+    );
+     
+    scalar initResidual = 
+@@ -467,6 +470,7 @@ void Foam::eigenSolver<Type>::solveNoReuse
+       
+    matrix.initMatrixInterfaces
+    (
++     true,
+      bouCoeffsCmpt,
+      interfaces,
+      psiCmpt,
+@@ -476,11 +480,13 @@ void Foam::eigenSolver<Type>::solveNoReuse
+ 
+    matrix.updateMatrixInterfaces
+    (
++     true,
+      bouCoeffsCmpt,
+      interfaces,
+      psiCmpt,
+      sourceCmpt,
+-     cmpt
++     cmpt,
++     0
+    );
+     
+    scalar initResidual = 
+@@ -655,7 +661,7 @@ void Foam::eigenSolver<Type>::assembleEigenAbx
+      // is rotational, the coupling is explicit, ie, we multiply matrix coefficients by field values 
+      // and send them to the source vector... 
+      if (pTraits<Type>::rank != 0 &&
+-         refCast<const cyclicFvPatch>(pfvPatch).cyclicPatch().transform().rotates()
++         refCast<const cyclicFvPatch>(pfvPatch).cyclicPatch().transform() == coupledPolyPatch::ROTATIONAL
+         )
+      {           
+        const labelUList& nbrFaceCells = refCast<const cyclicFvPatch>( cyclicPatch ).neighbFvPatch().faceCells();
+@@ -697,7 +703,7 @@ void Foam::eigenSolver<Type>::assembleEigenAbx
+      // if the other half of a given AMI was sent to another processor. In pratice, nothing
+      // happens bellow if camipp is zero-sized.
+      const cyclicAMIPolyPatch& camipp = refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch();
+-     const cyclicAMIPolyPatch& neicamipp = camipp.nbrPatch();
++     const cyclicAMIPolyPatch& neicamipp = camipp.neighbPatch();
+      
+      const labelList& ownFC = camipp.faceCells();   
+      const labelList& neiFC = neicamipp.faceCells();
+@@ -708,15 +714,15 @@ void Foam::eigenSolver<Type>::assembleEigenAbx
+      // from one of them, which is considered the "owner" patch.
+      if (camipp.owner())
+      {      
+-       forAll(camipp.AMIs(), i)
++       //forAll(camipp.AMIs(), i)
+        {
+          // Distribute faceCells of neighbour (tgt) patch if parallel. We get
+          // the tgt faceCells transfered to the proc where the src patch (camipp) is.
+-         if (camipp.AMIs()[i].singlePatchProc() == -1) 
+-           camipp.AMIs()[i].tgtMap().distribute(neiFCproc);   
++         if (camipp.AMI().singlePatchProc() == -1) 
++           camipp.AMI().tgtMap().distribute(neiFCproc);   
+      
+-         const labelListList& srcAd = camipp.AMIs()[i].srcAddress();
+-         const scalarListList& srcW = camipp.AMIs()[i].srcWeights();
++         const labelListList& srcAd = camipp.AMI().srcAddress();
++         const scalarListList& srcW = camipp.AMI().srcWeights();
+          forAll(srcAd, k)
+          {             
+            // Matrix of coefs - Diagonal  
+@@ -724,10 +730,10 @@ void Foam::eigenSolver<Type>::assembleEigenAbx
+          
+            // If the applyLowWeightCorrection option is enabled, the zero-gradient
+            // condition must be applied when the weightSum is less than a treshold.  
+-           if (camipp.AMIs()[i].applyLowWeightCorrection())
++           if (camipp.AMI().applyLowWeightCorrection())
+            {
+              // Apply implicit zero-gradient
+-             if (camipp.AMIs()[i].srcWeightsSum()[k] < camipp.AMIs()[i].lowWeightCorrection())
++             if (camipp.AMI().srcWeightsSum()[k] < camipp.AMI().lowWeightCorrection())
+              { 
+                tripList.push_back( trip(ownFC[k], ownFC[k], -bC[k]) );
+              }
+@@ -756,15 +762,15 @@ void Foam::eigenSolver<Type>::assembleEigenAbx
+      }
+      else
+      { 
+-      forAll(neicamipp.AMIs(), i)
++      //forAll(neicamipp.AMIs(), i)
+        {
+          // Distribute faceCells of neighbour (src) patch if parallel. We get
+          // the src faceCells transfered to the proc where the tgt patch (camipp) is
+-         if (neicamipp.AMIs()[i].singlePatchProc() == -1) 
+-           neicamipp.AMIs()[i].srcMap().distribute(neiFCproc);   
++         if (neicamipp.AMI().singlePatchProc() == -1) 
++           neicamipp.AMI().srcMap().distribute(neiFCproc);   
+        
+-         const labelListList& tgtAd = neicamipp.AMIs()[i].tgtAddress();
+-         const scalarListList& tgtW = neicamipp.AMIs()[i].tgtWeights();
++         const labelListList& tgtAd = neicamipp.AMI().tgtAddress();
++         const scalarListList& tgtW = neicamipp.AMI().tgtWeights();
+          forAll(tgtAd, k)
+          {                         
+            // Matrix of coefs - Diagonal 
+@@ -772,10 +778,10 @@ void Foam::eigenSolver<Type>::assembleEigenAbx
+                      
+            // If the applyLowWeightCorrection option is enabled, the zero-gradient
+            // condition must be applied when the weightSum is less than a treshold.  
+-           if (neicamipp.AMIs()[i].applyLowWeightCorrection())
++           if (neicamipp.AMI().applyLowWeightCorrection())
+            {
+              // Apply implicit zero-gradient
+-             if (neicamipp.AMIs()[i].tgtWeightsSum()[k] < neicamipp.AMIs()[i].lowWeightCorrection())
++             if (neicamipp.AMI().tgtWeightsSum()[k] < neicamipp.AMI().lowWeightCorrection())
+              {
+                 tripList.push_back( trip(ownFC[k], ownFC[k], -bC[k]) );  
+              }
+@@ -861,7 +867,7 @@ void Foam::eigenSolver<Type>::assembleEigenBx
+    // and variable has rank > 0
+    else if (isType<cyclicFvPatch>(T.mesh().boundary()[patchI]) &&
+            pTraits<Type>::rank != 0 &&
+-           refCast<const cyclicFvPatch>(T.mesh().boundary()[patchI]).cyclicPatch().transform().rotates()
++           refCast<const cyclicFvPatch>(T.mesh().boundary()[patchI]).cyclicPatch().transform() == coupledPolyPatch::ROTATIONAL
+            )
+    {   
+      const fvPatch& cyclicPatch = T.mesh().boundary()[patchI];
+diff --git a/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/BiCGSTAB/eBiCGSTAB.C b/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/BiCGSTAB/eBiCGSTAB.C
+index d7a4285..cd0dea5 100755
+--- a/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/BiCGSTAB/eBiCGSTAB.C
++++ b/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/BiCGSTAB/eBiCGSTAB.C
+@@ -46,8 +46,8 @@ Foam::EigenIterDirSolvers::BiCGSTAB::BiCGSTAB
+ )
+ :
+ EigenIterDirSolver(dict),
+-solverILU_(NULL),
+-solverDiag_(NULL),
++solverILU_(nullptr),
++solverDiag_(nullptr),
+ precondType_(dict.subDict("preconditioner").lookup("preconditioner"))
+ {
+     // Note: I know the pseudo-RTS for preconditioner is ugly, but since
+diff --git a/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/GMRES/eGMRES.C b/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/GMRES/eGMRES.C
+index 1233eb1..03a5b93 100755
+--- a/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/GMRES/eGMRES.C
++++ b/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/GMRES/eGMRES.C
+@@ -46,8 +46,8 @@ Foam::EigenIterDirSolvers::GMRES::GMRES
+ )
+ :
+ EigenIterDirSolver(dict),
+-solverILU_(NULL),
+-solverDiag_(NULL),
++solverILU_(nullptr),
++solverDiag_(nullptr),
+ precondType_(dict.subDict("preconditioner").lookup("preconditioner"))
+ {
+     // Note: I know the pseudo-RTS for preconditioner is ugly, but since
+diff --git a/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/PCG/ePCG.C b/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/PCG/ePCG.C
+index ec3bdbc..1386e3a 100755
+--- a/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/PCG/ePCG.C
++++ b/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/PCG/ePCG.C
+@@ -46,8 +46,8 @@ Foam::EigenIterDirSolvers::ConjugateGradient::ConjugateGradient
+ )
+ :
+ EigenIterDirSolver(dict),
+-solverICC_(NULL),
+-solverDiag_(NULL),
++solverICC_(nullptr),
++solverDiag_(nullptr),
+ precondType_(dict.subDict("preconditioner").lookup("preconditioner"))
+ {
+     // Note: I know the pseudo-RTS for preconditioner is ugly, but since
+diff --git a/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/SparseLU/eSparseLU.C b/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/SparseLU/eSparseLU.C
+index 964e0a4..76a3923 100755
+--- a/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/SparseLU/eSparseLU.C
++++ b/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/SparseLU/eSparseLU.C
+@@ -45,7 +45,7 @@ Foam::EigenIterDirSolvers::SparseLU::SparseLU
+ )
+ :
+ EigenIterDirSolver(dict),
+-sparseLU_(NULL)
++sparseLU_(nullptr)
+ {
+     sparseLU_.reset
+     (
+diff --git a/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/newEigenIterDirSolver.C b/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/newEigenIterDirSolver.C
+index 900f926..36509d1 100755
+--- a/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/newEigenIterDirSolver.C
++++ b/of90/src/libs/sparseMatrixSolvers/segregated/eigenSolver/solvers/newEigenIterDirSolver.C
+@@ -35,12 +35,11 @@ Foam::autoPtr<Foam::EigenIterDirSolver> Foam::EigenIterDirSolver::New
+     const dictionary& dict
+ )
+ {
+-    word typeName = dict.lookup("solver");
++    word typeName(dict.lookup("solver"));
+ 
+-    dictionaryConstructorTable::iterator cstrIter =
+-        dictionaryConstructorTablePtr_->find(typeName);
++    auto* ctorPtr = dictionaryConstructorTable(typeName);
+ 
+-    if (cstrIter == dictionaryConstructorTablePtr_->end())
++    if (!ctorPtr)
+     {
+         FatalErrorIn
+         (
+@@ -52,7 +51,7 @@ Foam::autoPtr<Foam::EigenIterDirSolver> Foam::EigenIterDirSolver::New
+             << exit(FatalError);
+     }
+ 
+-    return autoPtr<EigenIterDirSolver>(cstrIter()(dict));
++    return ctorPtr(dict);
+ }
+ 
+ 
+diff --git a/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/hypreSolver.C b/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/hypreSolver.C
+index e857d74..ba160ac 100755
+--- a/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/hypreSolver.C
++++ b/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/hypreSolver.C
+@@ -49,8 +49,8 @@ Foam::hypreSolver<Type>::hypreSolver
+ :
+ sparseSolver<Type>(T, mesh, fvSolution),
+ saveSystem_(fvSolution.subDict("solvers").subDict(word(T.name())).lookupOrDefault<Switch>("saveSystem", false)),
+-HPsolver_(NULL),
+-HPprecond_(NULL),
++HPsolver_(nullptr),
++HPprecond_(nullptr),
+ times_(0),
+ updatePrecondFreq_(saveSystem_ ? readInt(fvSolution.subDict("solvers").subDict(word(T.name())).lookup("updatePrecondFrequency")) : 1000),
+ updateA_(saveSystem_ ? readBool(fvSolution.subDict("solvers").subDict(word(T.name())).lookup("updateMatrixCoeffs")) : false),
+@@ -74,8 +74,8 @@ isThereCyclicAMI_(false)
+   // Direct MPI_Init instead of Foam::UPstream::init()
+   // to keep Foam structure as if it was a serial run
+   // but runs Hypre in mpi singleton (needed).
+-  if ( this->counterHypre_ + this->counterPetsc_ == 0 && !Pstream::parRun())
+-    MPI_Init(NULL,NULL); 
++  //if ( this->counterHypre_ + this->counterPetsc_ == 0 && !Pstream::parRun())
++  //  MPI_Init(NULL,NULL); 
+     
+   // Build/set structures if the system is to be saved  
+   if (this->saveSystem_)
+@@ -154,7 +154,7 @@ void Foam::hypreSolver<Type>::checkLimitations
+      {  
+        // Partial support for rotational transform in non-scalar variables (coupling is explicit)     
+        if (!isScalar &&
+-            refCast<const cyclicFvPatch>(pfvPatch).cyclicPatch().transform().rotates()
++            refCast<const cyclicFvPatch>(pfvPatch).cyclicPatch().transform() == coupledPolyPatch::ROTATIONAL
+           )
+        {
+            WarningInFunction
+@@ -169,7 +169,7 @@ void Foam::hypreSolver<Type>::checkLimitations
+      {
+        // No support for rotational transform in non-scalar variables     
+        if (!isScalar &&
+-            refCast<const processorCyclicFvPatch>(pfvPatch).procPolyPatch().transform().rotates()
++            refCast<const processorCyclicFvPatch>(pfvPatch).procPolyPatch().transform() == coupledPolyPatch::ROTATIONAL
+           )
+        {
+            FatalErrorInFunction
+@@ -183,7 +183,7 @@ void Foam::hypreSolver<Type>::checkLimitations
+      {
+        // No support for rotational transform in non-scalar variables     
+        if (!isScalar &&
+-            refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch().transform().rotates()
++            refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch().transform() == coupledPolyPatch::ROTATIONAL
+           )
+        {
+            FatalErrorInFunction
+@@ -311,6 +311,7 @@ void Foam::hypreSolver<Type>::solveReuse
+       
+    matrix.initMatrixInterfaces
+    (
++     true,
+      bouCoeffsCmpt,
+      interfaces,
+      psiCmpt,
+@@ -320,11 +321,13 @@ void Foam::hypreSolver<Type>::solveReuse
+ 
+    matrix.updateMatrixInterfaces
+    (
++     true,
+      bouCoeffsCmpt,
+      interfaces,
+      psiCmpt,
+      sourceCmpt,
+-     cmpt
++     cmpt,
++     0
+    );
+     
+    scalar initResidual = 
+@@ -547,6 +550,7 @@ void Foam::hypreSolver<Type>::solveNoReuse
+       
+    matrix.initMatrixInterfaces
+    (
++     true,
+      bouCoeffsCmpt,
+      interfaces,
+      psiCmpt,
+@@ -556,11 +560,13 @@ void Foam::hypreSolver<Type>::solveNoReuse
+ 
+    matrix.updateMatrixInterfaces
+    (
++     true,
+      bouCoeffsCmpt,
+      interfaces,
+      psiCmpt,
+      sourceCmpt,
+-     cmpt
++     cmpt,
++     0
+    );
+     
+    scalar initResidual = 
+@@ -725,26 +731,26 @@ void Foam::hypreSolver<Type>::computeAllocationHypre
+      else if (isType<cyclicAMIFvPatch>(pfvPatch))
+      {       
+        const cyclicAMIPolyPatch& camipp = refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch();
+-       const cyclicAMIPolyPatch& neicamipp = camipp.nbrPatch();
++       const cyclicAMIPolyPatch& neicamipp = camipp.neighbPatch();
+        
+        const labelList& ownFC = camipp.faceCells();   
+      
+        if (camipp.owner())
+        {      
+-         forAll(camipp.AMIs(), i)
++         //forAll(camipp.AMIs(), i)
+          {
+-           const labelListList& srcAd = camipp.AMIs()[i].srcAddress();
++           const labelListList& srcAd = camipp.AMI().srcAddress();
+  
+            // Each patch of the AMI interface in a different processor
+-           if (camipp.AMIs()[i].singlePatchProc() == -1) 
++           if (camipp.AMI().singlePatchProc() == -1) 
+            {            
+              forAll(srcAd, facei)
+              {
+                forAll(srcAd[facei], kk)
+                {
+-                 if (camipp.AMIs()[i].applyLowWeightCorrection())
++                 if (camipp.AMI().applyLowWeightCorrection())
+                  {            
+-                   if (camipp.AMIs()[i].srcWeightsSum()[facei] < camipp.AMIs()[i].lowWeightCorrection())
++                   if (camipp.AMI().srcWeightsSum()[facei] < camipp.AMI().lowWeightCorrection())
+                    {
+                      maxInProcFaces_[ownFC[facei]] += 1;
+                    }
+@@ -778,20 +784,20 @@ void Foam::hypreSolver<Type>::computeAllocationHypre
+        }  
+        else
+        {      
+-         forAll(neicamipp.AMIs(), i)
++         //forAll(neicamipp.AMIs(), i)
+          {
+-           const labelListList& tgtAd = neicamipp.AMIs()[i].tgtAddress();
++           const labelListList& tgtAd = neicamipp.AMI().tgtAddress();
+       
+            // Each patch of the AMI interface in a different processor
+-           if (neicamipp.AMIs()[i].singlePatchProc() == -1) 
++           if (neicamipp.AMI().singlePatchProc() == -1) 
+            {             
+              forAll(tgtAd, facei)
+              {
+                forAll(tgtAd[facei], kk)
+                {
+-                 if (neicamipp.AMIs()[i].applyLowWeightCorrection())
++                 if (neicamipp.AMI().applyLowWeightCorrection())
+                  {           
+-                   if (neicamipp.AMIs()[i].tgtWeightsSum()[facei] < neicamipp.AMIs()[i].lowWeightCorrection())
++                   if (neicamipp.AMI().tgtWeightsSum()[facei] < neicamipp.AMI().lowWeightCorrection())
+                    {
+                      maxInProcFaces_[ownFC[facei]] += 1;
+                    }
+@@ -1028,7 +1034,7 @@ void Foam::hypreSolver<Type>::assembleHypreAbx
+      // is rotational, the coupling is explicit, ie, we multiply matrix coefficients by field values 
+      // and send them to the source vector... 
+      if (pTraits<Type>::rank != 0 &&
+-         refCast<const cyclicFvPatch>(pfvPatch).cyclicPatch().transform().rotates()
++         refCast<const cyclicFvPatch>(pfvPatch).cyclicPatch().transform() == coupledPolyPatch::ROTATIONAL
+         )
+      {           
+        const labelUList& nbrFaceCells = refCast<const cyclicFvPatch>( cyclicPatch ).neighbFvPatch().faceCells();
+@@ -1079,7 +1085,7 @@ void Foam::hypreSolver<Type>::assembleHypreAbx
+      // if the other half of a given AMI was sent to another processor. In pratice, nothing
+      // happens bellow if camipp is zero-sized.
+      const cyclicAMIPolyPatch& camipp = refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch();
+-     const cyclicAMIPolyPatch& neicamipp = camipp.nbrPatch();
++     const cyclicAMIPolyPatch& neicamipp = camipp.neighbPatch();
+      
+      const labelList& ownFC = camipp.faceCells();   
+      const labelList& neiFC = neicamipp.faceCells();
+@@ -1091,15 +1097,15 @@ void Foam::hypreSolver<Type>::assembleHypreAbx
+      // from one of them, which is considered the "owner" patch.
+      if (camipp.owner())
+      {      
+-       forAll(camipp.AMIs(), i)
++       //forAll(camipp.AMIs(), i)
+        {
+          // Distribute faceCells of neighbour (tgt) patch if parallel. We get
+          // the tgt faceCells transfered to the proc where the src patch (camipp) is.
+-         if (camipp.AMIs()[i].singlePatchProc() == -1) 
+-           camipp.AMIs()[i].tgtMap().distribute(neiFCproc);   
++         if (camipp.AMI().singlePatchProc() == -1) 
++           camipp.AMI().tgtMap().distribute(neiFCproc);   
+      
+-         const labelListList& srcAd = camipp.AMIs()[i].srcAddress();
+-         const scalarListList& srcW = camipp.AMIs()[i].srcWeights();
++         const labelListList& srcAd = camipp.AMI().srcAddress();
++         const scalarListList& srcW = camipp.AMI().srcWeights();
+          forAll(srcAd, k)
+          {             
+            // Matrix of coefs - Diagonal  
+@@ -1108,10 +1114,10 @@ void Foam::hypreSolver<Type>::assembleHypreAbx
+          
+            // If the applyLowWeightCorrection option is enabled, the zero-gradient
+            // condition must be applied when the weightSum is less than a treshold.  
+-           if (camipp.AMIs()[i].applyLowWeightCorrection())
++           if (camipp.AMI().applyLowWeightCorrection())
+            {
+              // Apply implicit zero-gradient
+-             if (camipp.AMIs()[i].srcWeightsSum()[k] < camipp.AMIs()[i].lowWeightCorrection())
++             if (camipp.AMI().srcWeightsSum()[k] < camipp.AMI().lowWeightCorrection())
+              {
+                col = row;
+                double v = -bC[k];
+@@ -1146,15 +1152,15 @@ void Foam::hypreSolver<Type>::assembleHypreAbx
+      }
+      else
+      { 
+-      forAll(neicamipp.AMIs(), i)
++      //forAll(neicamipp.AMIs(), i)
+        {
+          // Distribute faceCells of neighbour (src) patch if parallel. We get
+          // the src faceCells transfered to the proc where the tgt patch (camipp) is
+-         if (neicamipp.AMIs()[i].singlePatchProc() == -1) 
+-           neicamipp.AMIs()[i].srcMap().distribute(neiFCproc);   
++         if (neicamipp.AMI().singlePatchProc() == -1) 
++           neicamipp.AMI().srcMap().distribute(neiFCproc);   
+        
+-         const labelListList& tgtAd = neicamipp.AMIs()[i].tgtAddress();
+-         const scalarListList& tgtW = neicamipp.AMIs()[i].tgtWeights();
++         const labelListList& tgtAd = neicamipp.AMI().tgtAddress();
++         const scalarListList& tgtW = neicamipp.AMI().tgtWeights();
+          forAll(tgtAd, k)
+          {                         
+            // Matrix of coefs - Diagonal 
+@@ -1162,10 +1168,10 @@ void Foam::hypreSolver<Type>::assembleHypreAbx
+            HYPRE_IJMatrixAddToValues(A, 1, &nnz, &row, &row, &iC[k]);                     
+            // If the applyLowWeightCorrection option is enabled, the zero-gradient
+            // condition must be applied when the weightSum is less than a treshold.  
+-           if (neicamipp.AMIs()[i].applyLowWeightCorrection())
++           if (neicamipp.AMI().applyLowWeightCorrection())
+            {
+              // Apply implicit zero-gradient
+-             if (neicamipp.AMIs()[i].tgtWeightsSum()[k] < neicamipp.AMIs()[i].lowWeightCorrection())
++             if (neicamipp.AMI().tgtWeightsSum()[k] < neicamipp.AMI().lowWeightCorrection())
+              {
+                col = row;
+                double v = -bC[k];
+@@ -1274,7 +1280,7 @@ void Foam::hypreSolver<Type>::assembleHypreBx
+    // and variable has rank > 0
+    else if (isType<cyclicFvPatch>(T.mesh().boundary()[patchI]) &&
+            pTraits<Type>::rank != 0 &&
+-           refCast<const cyclicFvPatch>(T.mesh().boundary()[patchI]).cyclicPatch().transform().rotates()
++           refCast<const cyclicFvPatch>(T.mesh().boundary()[patchI]).cyclicPatch().transform() == coupledPolyPatch::ROTATIONAL
+            )
+    {   
+      const fvPatch& cyclicPatch = T.mesh().boundary()[patchI];
+diff --git a/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/hypreSolver.H b/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/hypreSolver.H
+index abf301c..c2fc585 100755
+--- a/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/hypreSolver.H
++++ b/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/hypreSolver.H
+@@ -264,8 +264,8 @@ public:
+           this->counterHypre_--;
+           
+           // Since we start MPI, we are also responsible to finalize it 
+-          if (this->counterHypre_ + this->counterPetsc_ == 0 && !Pstream::parRun())
+-            MPI_Finalize();
++          //if (this->counterHypre_ + this->counterPetsc_ == 0 && !Pstream::parRun())
++          //  MPI_Finalize();
+         }
+         
+        
+diff --git a/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/preconditioners/newHypreIJPreconditioner.C b/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/preconditioners/newHypreIJPreconditioner.C
+index b3f3026..ce7aa36 100755
+--- a/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/preconditioners/newHypreIJPreconditioner.C
++++ b/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/preconditioners/newHypreIJPreconditioner.C
+@@ -35,12 +35,11 @@ Foam::autoPtr<Foam::HypreIJPreconditioner> Foam::HypreIJPreconditioner::New
+     const dictionary& dict
+ )
+ {
+-    word typeName = dict.subDict("preconditioner").lookup("preconditioner");
++    word typeName(dict.subDict("preconditioner").lookup("preconditioner"));
+     
+-    dictionaryConstructorTable::iterator cstrIter =
+-        dictionaryConstructorTablePtr_->find(typeName);
++    auto* ctorPtr = dictionaryConstructorTable(typeName);
+ 
+-    if (cstrIter == dictionaryConstructorTablePtr_->end())
++    if (!ctorPtr)
+     {
+         FatalErrorIn
+         (
+@@ -52,7 +51,7 @@ Foam::autoPtr<Foam::HypreIJPreconditioner> Foam::HypreIJPreconditioner::New
+             << exit(FatalError);
+     }
+ 
+-    return autoPtr<HypreIJPreconditioner>(cstrIter()(dict.subDict("preconditioner")));
++    return ctorPtr(dict.subDict("preconditioner"));
+ }
+ 
+ 
+diff --git a/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/solvers/newHypreIJSolver.C b/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/solvers/newHypreIJSolver.C
+index 992d5f7..c6fd767 100755
+--- a/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/solvers/newHypreIJSolver.C
++++ b/of90/src/libs/sparseMatrixSolvers/segregated/hypreSolver/solvers/newHypreIJSolver.C
+@@ -24,36 +24,28 @@ License
+ 
+ \*---------------------------------------------------------------------------*/
+ 
+-#include "error.H"
+-#include "autoPtr.H"
+ #include "HypreIJSolver.H"
++#include "autoPtr.H"
++#include "error.H"
+ 
+ // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+ 
+-Foam::autoPtr<Foam::HypreIJSolver> Foam::HypreIJSolver::New
+-(
+-    const dictionary& dict
+-)
+-{
+-    word typeName = dict.lookup("solver");
+-
+-    dictionaryConstructorTable::iterator cstrIter =
+-        dictionaryConstructorTablePtr_->find(typeName);
+-
+-    if (cstrIter == dictionaryConstructorTablePtr_->end())
+-    {
+-        FatalErrorIn
+-        (
+-            "HypreIJSolver::New(const dictionary& dict)"
+-        )   << "Unknown HypreIJSolver type " << typeName
+-            << endl << endl
+-            << "Valid HypreIJSolver types are :" << endl
+-            << dictionaryConstructorTablePtr_->toc()
+-            << exit(FatalError);
+-    }
+-
+-    return autoPtr<HypreIJSolver>(cstrIter()(dict));
+-}
++Foam::autoPtr<Foam::HypreIJSolver>
++Foam::HypreIJSolver::New(const dictionary &dict) {
+ 
++  word typeName(dict.lookup("solver"));
++
++  auto *ctorPtr = dictionaryConstructorTable(typeName);
++
++  if (!ctorPtr) {
++    FatalErrorIn("HypreIJSolver::New(const dictionary& dict)")
++        << "Unknown HypreIJSolver type " << typeName << endl
++        << endl
++        << "Valid HypreIJSolver types are :" << endl
++        << dictionaryConstructorTablePtr_->toc() << exit(FatalError);
++  }
++
++  return ctorPtr(dict);
++}
+ 
+ // ************************************************************************* //
+diff --git a/of90/src/libs/sparseMatrixSolvers/segregated/petscSolver/petscSolver.C b/of90/src/libs/sparseMatrixSolvers/segregated/petscSolver/petscSolver.C
+index 4f0839b..9f87b3e 100755
+--- a/of90/src/libs/sparseMatrixSolvers/segregated/petscSolver/petscSolver.C
++++ b/of90/src/libs/sparseMatrixSolvers/segregated/petscSolver/petscSolver.C
+@@ -70,8 +70,8 @@ isThereCyclicAMI_(false)
+     autoPrecond = true;
+   
+   // Init MPI if running in singleton.
+-  if ( this->counterHypre_ + this->counterPetsc_ == 0 && !Pstream::parRun())
+-    MPI_Init(NULL,NULL);  
++  //if ( this->counterHypre_ + this->counterPetsc_ == 0 && !Pstream::parRun())
++  //  MPI_Init(NULL,NULL);  
+   
+   // Initialize PETSC
+   if (this->counterPetsc_ == 0)
+@@ -145,7 +145,7 @@ void Foam::petscSolver<Type>::checkLimitations
+      {  
+        // Partial support for rotational transform in non-scalar variables (coupling is explicit)     
+        if (!isScalar &&
+-            refCast<const cyclicFvPatch>(pfvPatch).cyclicPatch().transform().rotates()
++            refCast<const cyclicFvPatch>(pfvPatch).cyclicPatch().transform() == coupledPolyPatch::ROTATIONAL
+           )
+        {
+            WarningInFunction
+@@ -160,7 +160,7 @@ void Foam::petscSolver<Type>::checkLimitations
+      {
+        // No support for rotational transform in non-scalar variables     
+        if (!isScalar &&
+-            refCast<const processorCyclicFvPatch>(pfvPatch).procPolyPatch().transform().rotates()
++            refCast<const processorCyclicFvPatch>(pfvPatch).procPolyPatch().transform() == coupledPolyPatch::ROTATIONAL
+           )
+        {
+            FatalErrorInFunction
+@@ -174,7 +174,7 @@ void Foam::petscSolver<Type>::checkLimitations
+      {
+        // No support for rotational transform in non-scalar variables     
+        if (!isScalar &&
+-            refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch().transform().rotates()
++            refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch().transform() == coupledPolyPatch::ROTATIONAL
+           )
+        {
+            FatalErrorInFunction
+@@ -312,6 +312,7 @@ void Foam::petscSolver<Type>::solveReuse
+       
+    matrix.initMatrixInterfaces
+    (
++     true, // TODO: Not sure if 'add' should be true or false...
+      bouCoeffsCmpt,
+      interfaces,
+      psiCmpt,
+@@ -321,11 +322,13 @@ void Foam::petscSolver<Type>::solveReuse
+ 
+    matrix.updateMatrixInterfaces
+    (
++     true, // TODO: Same with 'add' if it should be true or false...
+      bouCoeffsCmpt,
+      interfaces,
+      psiCmpt,
+      sourceCmpt,
+-     cmpt
++     cmpt,
++     0 // TODO: what's this again?
+    );
+     
+    scalar initResidual = 
+@@ -551,6 +554,7 @@ void Foam::petscSolver<Type>::solveNoReuse
+       
+    matrix.initMatrixInterfaces
+    (
++     true, // TODO: reference to 'add' boolean
+      bouCoeffsCmpt,
+      interfaces,
+      psiCmpt,
+@@ -560,11 +564,13 @@ void Foam::petscSolver<Type>::solveNoReuse
+ 
+    matrix.updateMatrixInterfaces
+    (
++     true,
+      bouCoeffsCmpt,
+      interfaces,
+      psiCmpt,
+      sourceCmpt,
+-     cmpt
++     cmpt,
++     0
+    );
+     
+    scalar initResidual = 
+@@ -699,26 +705,25 @@ void Foam::petscSolver<Type>::computeAllocationPetsc
+      else if (isType<cyclicAMIFvPatch>(pfvPatch))
+      {       
+        const cyclicAMIPolyPatch& camipp = refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch();
+-       const cyclicAMIPolyPatch& neicamipp = camipp.nbrPatch();
++       const cyclicAMIPolyPatch& neicamipp = camipp.neighbPatch();
+        
+        const labelList& ownFC = camipp.faceCells();   
+      
+        if (camipp.owner())
+        {      
+-         forAll(camipp.AMIs(), i)
+          {
+-           const labelListList& srcAd = camipp.AMIs()[i].srcAddress();
++           const labelListList& srcAd = camipp.AMI().srcAddress();
+  
+            // Each patch of the AMI interface in a different processor
+-           if (camipp.AMIs()[i].singlePatchProc() == -1) 
++           if (camipp.AMI().singlePatchProc() == -1) 
+            {            
+              forAll(srcAd, facei)
+              {
+                forAll(srcAd[facei], kk)
+                {
+-                 if (camipp.AMIs()[i].applyLowWeightCorrection())
++                 if (camipp.AMI().applyLowWeightCorrection())
+                  {            
+-                   if (camipp.AMIs()[i].srcWeightsSum()[facei] < camipp.AMIs()[i].lowWeightCorrection())
++                   if (camipp.AMI().srcWeightsSum()[facei] < camipp.AMI().lowWeightCorrection())
+                    {
+                      maxInProcFaces_[ownFC[facei]] += 1;
+                    }
+@@ -752,20 +757,19 @@ void Foam::petscSolver<Type>::computeAllocationPetsc
+        }  
+        else
+        {      
+-         forAll(neicamipp.AMIs(), i)
+          {
+-           const labelListList& tgtAd = neicamipp.AMIs()[i].tgtAddress();
++           const labelListList& tgtAd = neicamipp.AMI().tgtAddress();
+       
+            // Each patch of the AMI interface in a different processor
+-           if (neicamipp.AMIs()[i].singlePatchProc() == -1) 
++           if (neicamipp.AMI().singlePatchProc() == -1) 
+            {             
+              forAll(tgtAd, facei)
+              {
+                forAll(tgtAd[facei], kk)
+                {
+-                 if (neicamipp.AMIs()[i].applyLowWeightCorrection())
++                 if (neicamipp.AMI().applyLowWeightCorrection())
+                  {           
+-                   if (neicamipp.AMIs()[i].tgtWeightsSum()[facei] < neicamipp.AMIs()[i].lowWeightCorrection())
++                   if (neicamipp.AMI().tgtWeightsSum()[facei] < neicamipp.AMI().lowWeightCorrection())
+                    {
+                      maxInProcFaces_[ownFC[facei]] += 1;
+                    }
+@@ -1009,7 +1013,7 @@ void Foam::petscSolver<Type>::assemblePetscAbx
+      // is rotational, the coupling is explicit, ie, we multiply matrix coefficients by field values 
+      // and send them to the source vector... 
+      if (pTraits<Type>::rank != 0 &&
+-         refCast<const cyclicFvPatch>(pfvPatch).cyclicPatch().transform().rotates()
++         refCast<const cyclicFvPatch>(pfvPatch).cyclicPatch().transform() == coupledPolyPatch::ROTATIONAL
+         )
+      {           
+        const labelUList& nbrFaceCells = refCast<const cyclicFvPatch>( cyclicPatch ).neighbFvPatch().faceCells();
+@@ -1060,7 +1064,7 @@ void Foam::petscSolver<Type>::assemblePetscAbx
+      // if the other half of a given AMI was sent to another processor. In pratice, nothing
+      // happens bellow if camipp is zero-sized.
+      const cyclicAMIPolyPatch& camipp = refCast<const cyclicAMIFvPatch>(pfvPatch).cyclicAMIPatch();
+-     const cyclicAMIPolyPatch& neicamipp = camipp.nbrPatch();
++     const cyclicAMIPolyPatch& neicamipp = camipp.neighbPatch();
+      
+      const labelList& ownFC = camipp.faceCells();   
+      const labelList& neiFC = neicamipp.faceCells();
+@@ -1072,15 +1076,14 @@ void Foam::petscSolver<Type>::assemblePetscAbx
+      // from one of them, which is considered the "owner" patch.
+      if (camipp.owner())
+      {      
+-       forAll(camipp.AMIs(), i)
+        {
+          // Distribute faceCells of neighbour (tgt) patch if parallel. We get
+          // the tgt faceCells transfered to the proc where the src patch (camipp) is.
+-         if (camipp.AMIs()[i].singlePatchProc() == -1) 
+-           camipp.AMIs()[i].tgtMap().distribute(neiFCproc);   
++         if (camipp.AMI().singlePatchProc() == -1) 
++           camipp.AMI().tgtMap().distribute(neiFCproc);   
+      
+-         const labelListList& srcAd = camipp.AMIs()[i].srcAddress();
+-         const scalarListList& srcW = camipp.AMIs()[i].srcWeights();
++         const labelListList& srcAd = camipp.AMI().srcAddress();
++         const scalarListList& srcW = camipp.AMI().srcWeights();
+          forAll(srcAd, k)
+          {             
+            // Matrix of coefs - Diagonal  
+@@ -1089,10 +1092,10 @@ void Foam::petscSolver<Type>::assemblePetscAbx
+          
+            // If the applyLowWeightCorrection option is enabled, the zero-gradient
+            // condition must be applied when the weightSum is less than a treshold.  
+-           if (camipp.AMIs()[i].applyLowWeightCorrection())
++           if (camipp.AMI().applyLowWeightCorrection())
+            {
+              // Apply implicit zero-gradient
+-             if (camipp.AMIs()[i].srcWeightsSum()[k] < camipp.AMIs()[i].lowWeightCorrection())
++             if (camipp.AMI().srcWeightsSum()[k] < camipp.AMI().lowWeightCorrection())
+              {
+                col = row;
+                double v = -bC[k];
+@@ -1127,15 +1130,14 @@ void Foam::petscSolver<Type>::assemblePetscAbx
+      }
+      else
+      { 
+-      forAll(neicamipp.AMIs(), i)
+        {
+          // Distribute faceCells of neighbour (src) patch if parallel. We get
+          // the src faceCells transfered to the proc where the tgt patch (camipp) is
+-         if (neicamipp.AMIs()[i].singlePatchProc() == -1) 
+-           neicamipp.AMIs()[i].srcMap().distribute(neiFCproc);   
++         if (neicamipp.AMI().singlePatchProc() == -1) 
++           neicamipp.AMI().srcMap().distribute(neiFCproc);   
+        
+-         const labelListList& tgtAd = neicamipp.AMIs()[i].tgtAddress();
+-         const scalarListList& tgtW = neicamipp.AMIs()[i].tgtWeights();
++         const labelListList& tgtAd = neicamipp.AMI().tgtAddress();
++         const scalarListList& tgtW = neicamipp.AMI().tgtWeights();
+          forAll(tgtAd, k)
+          {                         
+            // Matrix of coefs - Diagonal 
+@@ -1144,10 +1146,10 @@ void Foam::petscSolver<Type>::assemblePetscAbx
+                      
+            // If the applyLowWeightCorrection option is enabled, the zero-gradient
+            // condition must be applied when the weightSum is less than a treshold.  
+-           if (neicamipp.AMIs()[i].applyLowWeightCorrection())
++           if (neicamipp.AMI().applyLowWeightCorrection())
+            {
+              // Apply implicit zero-gradient
+-             if (neicamipp.AMIs()[i].tgtWeightsSum()[k] < neicamipp.AMIs()[i].lowWeightCorrection())
++             if (neicamipp.AMI().tgtWeightsSum()[k] < neicamipp.AMI().lowWeightCorrection())
+              {
+                col = row;
+                double v = -bC[k];
+@@ -1292,7 +1294,7 @@ void Foam::petscSolver<Type>::assemblePetscbx
+    // and variable has rank > 0
+    else if (isType<cyclicFvPatch>(T.mesh().boundary()[patchI]) &&
+            pTraits<Type>::rank != 0 &&
+-           refCast<const cyclicFvPatch>(T.mesh().boundary()[patchI]).cyclicPatch().transform().rotates()
++           refCast<const cyclicFvPatch>(T.mesh().boundary()[patchI]).cyclicPatch().transform() == coupledPolyPatch::ROTATIONAL
+            )
+    {   
+      const fvPatch& cyclicPatch = T.mesh().boundary()[patchI];
+diff --git a/of90/src/libs/sparseMatrixSolvers/segregated/petscSolver/petscSolver.H b/of90/src/libs/sparseMatrixSolvers/segregated/petscSolver/petscSolver.H
+index c894544..dd16457 100755
+--- a/of90/src/libs/sparseMatrixSolvers/segregated/petscSolver/petscSolver.H
++++ b/of90/src/libs/sparseMatrixSolvers/segregated/petscSolver/petscSolver.H
+@@ -260,8 +260,8 @@ public:
+            ierr = PetscFinalize();
+           
+           // Since we start MPI, we are also responsible to finalize it 
+-          if (this->counterHypre_ + this->counterPetsc_ == 0 && !Pstream::parRun())
+-            MPI_Finalize();       
++          //if (this->counterHypre_ + this->counterPetsc_ == 0 && !Pstream::parRun())
++          //  MPI_Finalize();       
+         }   
+ 
+     // Member Functions
+diff --git a/of90/src/libs/sparseMatrixSolvers/segregated/sparseSolver.C b/of90/src/libs/sparseMatrixSolvers/segregated/sparseSolver.C
+index c6a851f..f87183a 100755
+--- a/of90/src/libs/sparseMatrixSolvers/segregated/sparseSolver.C
++++ b/of90/src/libs/sparseMatrixSolvers/segregated/sparseSolver.C
+@@ -42,20 +42,19 @@ Foam::autoPtr<Foam::sparseSolver<Type>> Foam::sparseSolver<Type>::New
+ 
+   Info<< "Using "<< modelType << " solver for " << word(T.name()) << endl;
+ 
+-  typename dictionaryConstructorTable::iterator cstrIter =
+-      dictionaryConstructorTablePtr_->find(modelType);
++  auto* ctorPtr = dictionaryConstructorTable(modelType);
+ 
+-  if (cstrIter == dictionaryConstructorTablePtr_->end())
++  if (!ctorPtr)
+   {
+     FatalErrorInFunction
+      << "Unknown sparseSolver type "
+      << modelType << nl << nl
+      << "Valid sparseSolvers are : " << endl
+-     << dictionaryConstructorTablePtr_->sortedToc()
++     << *dictionaryConstructorTablePtr_
+      << exit(FatalError);
+   }
+ 
+-  return autoPtr<sparseSolver<Type> > (cstrIter()(T, mesh, fvSolution));
++  return ctorPtr(T, mesh, fvSolution);
+ }
+ 
+ 
+-- 
+2.43.2
+

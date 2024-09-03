@@ -1,0 +1,330 @@
+From e1f9c9aa355df2c0b0c96d67f35920b52d6d5903 Mon Sep 17 00:00:00 2001
+From: Elwardi <elwardi.fadeli@tu-darmstadt.de>
+Date: Tue, 3 Sep 2024 13:48:28 +0200
+Subject: [PATCH] fix: adapt patch classes for use with ICSFoam
+
+---
+ src/Allwmake                                  | 72 +++++++++----------
+ .../constraint/cyclic/cyclicFvPatchField.C    | 49 +++++++++++--
+ .../constraint/cyclic/cyclicFvPatchField.H    | 11 ++-
+ .../cyclicAMI/cyclicAMIFvPatchField.C         | 36 +++++++++-
+ .../cyclicAMI/cyclicAMIFvPatchField.H         | 13 ++--
+ .../processor/processorFvPatchField.H         | 22 +++++-
+ .../processorCyclicFvPatchField.H             |  7 +-
+ 7 files changed, 160 insertions(+), 50 deletions(-)
+
+diff --git a/src/Allwmake b/src/Allwmake
+index 62983dcf1f..6a04e3c949 100755
+--- a/src/Allwmake
++++ b/src/Allwmake
+@@ -86,42 +86,42 @@ wmake $targetType ODE
+ 
+ thermophysicalModels/Allwmake $targetType $*
+ TurbulenceModels/Allwmake $targetType $*
+-wmake $targetType combustionModels
+-
+-wmakeLnInclude -u regionFaModels
+-wmakeLnInclude -u faOptions
+-regionModels/Allwmake $targetType $*
+-
+-wmake $targetType fvOptions
+-wmake $targetType faOptions
+-wmake $targetType fvMotionSolver
+-wmake $targetType regionFaModels
+-
+-lagrangian/Allwmake $targetType $*
+-
+-wmake $targetType overset
+-
+-# snappyHexMesh uses overset voxelMesh
+-mesh/Allwmake $targetType $*
+-renumber/Allwmake $targetType $*
+-fvAgglomerationMethods/Allwmake $targetType $*
+-wmake $targetType waveModels
+-
+-wmake $targetType engine
+-
+-conversion/Allwmake $targetType $*
+-
+-functionObjects/Allwmake $targetType $*
+-phaseSystemModels/Allwmake $targetType $*
+-
+-wmake $targetType lumpedPointMotion
+-wmake $targetType sixDoFRigidBodyMotion
+-wmake $targetType sixDoFRigidBodyState
+-wmake $targetType rigidBodyDynamics
+-wmake $targetType rigidBodyMeshMotion
+-wmake $targetType semiPermeableBaffle
+-wmake $targetType atmosphericModels
+-wmake $targetType optimisation/adjointOptimisation/adjoint
++#wmake $targetType combustionModels
++#
++#wmakeLnInclude -u regionFaModels
++#wmakeLnInclude -u faOptions
++#regionModels/Allwmake $targetType $*
++#
++#wmake $targetType fvOptions
++#wmake $targetType faOptions
++#wmake $targetType fvMotionSolver
++#wmake $targetType regionFaModels
++#
++#lagrangian/Allwmake $targetType $*
++#
++#wmake $targetType overset
++#
++## snappyHexMesh uses overset voxelMesh
++#mesh/Allwmake $targetType $*
++#renumber/Allwmake $targetType $*
++#fvAgglomerationMethods/Allwmake $targetType $*
++#wmake $targetType waveModels
++#
++#wmake $targetType engine
++#
++#conversion/Allwmake $targetType $*
++#
++#functionObjects/Allwmake $targetType $*
++#phaseSystemModels/Allwmake $targetType $*
++#
++#wmake $targetType lumpedPointMotion
++#wmake $targetType sixDoFRigidBodyMotion
++#wmake $targetType sixDoFRigidBodyState
++#wmake $targetType rigidBodyDynamics
++#wmake $targetType rigidBodyMeshMotion
++#wmake $targetType semiPermeableBaffle
++#wmake $targetType atmosphericModels
++#wmake $targetType optimisation/adjointOptimisation/adjoint
+ 
+ 
+ # interfaceTracking libs
+diff --git a/src/finiteVolume/fields/fvPatchFields/constraint/cyclic/cyclicFvPatchField.C b/src/finiteVolume/fields/fvPatchFields/constraint/cyclic/cyclicFvPatchField.C
+index 242828f5de..cedfa0712e 100644
+--- a/src/finiteVolume/fields/fvPatchFields/constraint/cyclic/cyclicFvPatchField.C
++++ b/src/finiteVolume/fields/fvPatchFields/constraint/cyclic/cyclicFvPatchField.C
+@@ -136,15 +136,56 @@ Foam::cyclicFvPatchField<Type>::patchNeighbourField() const
+     tmp<Field<Type>> tpnf(new Field<Type>(this->size()));
+     Field<Type>& pnf = tpnf.ref();
+ 
++    const word& fieldName = this->internalField().name();
+ 
+     if (doTransform())
+     {
+         forAll(pnf, facei)
+         {
+-            pnf[facei] = transform
+-            (
+-                forwardT()[0], iField[nbrFaceCells[facei]]
+-            );
++        	if (fieldName.startsWith("U"))
++    		{
++        		const fvMesh& mesh = this->patch().boundaryMesh().mesh();
++				const vectorField& Ui = mesh.objectRegistry::lookupObject<volVectorField>("U").primitiveField();
++
++        		if (fieldName == "U")
++        		{
++        			pnf[facei] = transform
++					(
++						forwardT()[0], iField[nbrFaceCells[facei]]
++					);
++        		}
++        		else
++        		{
++        			vector UCellTransf = transform(forwardT()[0], Ui[nbrFaceCells[facei]]);
++
++        			if (fieldName == "U.component(0)")
++        			{
++        				pnf[facei] = UCellTransf.component(0)*pTraits<Type>::one;
++        			}
++        			else if (fieldName == "U.component(1)")
++    				{
++        				pnf[facei] = UCellTransf.component(1)*pTraits<Type>::one;
++    				}
++        			else if  (fieldName == "U.component(2)")
++        			{
++        				pnf[facei] = UCellTransf.component(2)*pTraits<Type>::one;
++        			}
++        			else
++        			{
++        				pnf[facei] = transform
++						(
++							forwardT()[0], iField[nbrFaceCells[facei]]
++						);
++        			}
++        		}
++    		}
++    		else
++    		{
++    			pnf[facei] = transform
++				(
++					forwardT()[0], iField[nbrFaceCells[facei]]
++				);
++    		}
+         }
+     }
+     else
+diff --git a/src/finiteVolume/fields/fvPatchFields/constraint/cyclic/cyclicFvPatchField.H b/src/finiteVolume/fields/fvPatchFields/constraint/cyclic/cyclicFvPatchField.H
+index 33abab3bc7..086bf1c372 100644
+--- a/src/finiteVolume/fields/fvPatchFields/constraint/cyclic/cyclicFvPatchField.H
++++ b/src/finiteVolume/fields/fvPatchFields/constraint/cyclic/cyclicFvPatchField.H
+@@ -218,10 +218,15 @@ public:
+         // Cyclic coupled interface functions
+ 
+             //- Does the patch field perform the transformation
++//            virtual bool doTransform() const
++//            {
++//                return !(cyclicPatch_.parallel() || pTraits<Type>::rank == 0);
++//            }
++
+             virtual bool doTransform() const
+-            {
+-                return !(cyclicPatch_.parallel() || pTraits<Type>::rank == 0);
+-            }
++			{
++				return !(cyclicPatch_.parallel());
++			}
+ 
+             //- Return face transformation tensor
+             virtual const tensorField& forwardT() const
+diff --git a/src/finiteVolume/fields/fvPatchFields/constraint/cyclicAMI/cyclicAMIFvPatchField.C b/src/finiteVolume/fields/fvPatchFields/constraint/cyclicAMI/cyclicAMIFvPatchField.C
+index a7b0a8041d..91447bf0cf 100644
+--- a/src/finiteVolume/fields/fvPatchFields/constraint/cyclicAMI/cyclicAMIFvPatchField.C
++++ b/src/finiteVolume/fields/fvPatchFields/constraint/cyclicAMI/cyclicAMIFvPatchField.C
+@@ -154,6 +154,8 @@ Foam::cyclicAMIFvPatchField<Type>::patchNeighbourField() const
+ 
+     Field<Type> pnf(iField, nbrFaceCells);
+ 
++    const word& fieldName = this->internalField().name();
++
+     tmp<Field<Type>> tpnf;
+     if (cyclicAMIPatch_.applyLowWeightCorrection())
+     {
+@@ -168,7 +170,39 @@ Foam::cyclicAMIFvPatchField<Type>::patchNeighbourField() const
+ 
+     if (doTransform())
+     {
+-        tpnf.ref() = transform(forwardT(), tpnf());
++		if (fieldName.startsWith("U"))
++		{
++			if (fieldName == "U")
++			{
++				tpnf.ref() = transform(forwardT(), tpnf());
++			}
++			else
++			{
++				const fvMesh& mesh = this->patch().boundaryMesh().mesh();
++				const vectorField& Ui = mesh.objectRegistry::lookupObject<volVectorField>("U").primitiveField();
++				vectorField Up(Ui, nbrFaceCells);
++				vectorField UpInterp = cyclicAMIPatch_.interpolate(Up);
++
++				UpInterp = transform(forwardT(), UpInterp);
++
++				if (fieldName == "U.component(0)")
++				{
++					tpnf.ref() = UpInterp.component(0)*pTraits<Type>::one;
++				}
++				else if (fieldName == "U.component(1)")
++				{
++					tpnf.ref() = UpInterp.component(1)*pTraits<Type>::one;
++				}
++				else if  (fieldName == "U.component(2)")
++				{
++					tpnf.ref() = UpInterp.component(2)*pTraits<Type>::one;
++				}
++			}
++		}
++		else
++		{
++			tpnf.ref() = transform(forwardT(), tpnf());
++		}
+     }
+ 
+     return tpnf;
+diff --git a/src/finiteVolume/fields/fvPatchFields/constraint/cyclicAMI/cyclicAMIFvPatchField.H b/src/finiteVolume/fields/fvPatchFields/constraint/cyclicAMI/cyclicAMIFvPatchField.H
+index 08ddce2aa7..9ea8f81408 100644
+--- a/src/finiteVolume/fields/fvPatchFields/constraint/cyclicAMI/cyclicAMIFvPatchField.H
++++ b/src/finiteVolume/fields/fvPatchFields/constraint/cyclicAMI/cyclicAMIFvPatchField.H
+@@ -240,11 +240,16 @@ public:
+         // Cyclic AMI coupled interface functions
+ 
+             //- Does the patch field perform the transformation
++//            virtual bool doTransform() const
++//            {
++//                return
++//                    !(cyclicAMIPatch_.parallel() || pTraits<Type>::rank == 0);
++//            }
++
+             virtual bool doTransform() const
+-            {
+-                return
+-                    !(cyclicAMIPatch_.parallel() || pTraits<Type>::rank == 0);
+-            }
++             {
++                 return !(cyclicAMIPatch_.parallel());
++             }
+ 
+             //- Return face transformation tensor
+             virtual const tensorField& forwardT() const
+diff --git a/src/finiteVolume/fields/fvPatchFields/constraint/processor/processorFvPatchField.H b/src/finiteVolume/fields/fvPatchFields/constraint/processor/processorFvPatchField.H
+index cb71010001..cadac3fadc 100644
+--- a/src/finiteVolume/fields/fvPatchFields/constraint/processor/processorFvPatchField.H
++++ b/src/finiteVolume/fields/fvPatchFields/constraint/processor/processorFvPatchField.H
+@@ -191,6 +191,21 @@ public:
+             //- Return neighbour field given internal field
+             virtual tmp<Field<Type>> patchNeighbourField() const;
+ 
++            virtual label& outstandingSendRequest() const
++			{
++				return outstandingSendRequest_;
++			}
++
++            virtual label& outstandingRecvRequest() const
++            {
++            	return outstandingRecvRequest_;
++            }
++
++            inline Field<Type>& receiveBuf() const
++			{
++				return receiveBuf_;
++			}
++
+ 
+         // Evaluation functions
+ 
+@@ -282,9 +297,14 @@ public:
+             }
+ 
+             //- Does the patch field perform the transformation
++//            virtual bool doTransform() const
++//            {
++//                return !(procPatch_.parallel() || pTraits<Type>::rank == 0);
++//            }
++
+             virtual bool doTransform() const
+             {
+-                return !(procPatch_.parallel() || pTraits<Type>::rank == 0);
++                return !(procPatch_.parallel());
+             }
+ 
+             //- Return face transformation tensor
+diff --git a/src/finiteVolume/fields/fvPatchFields/constraint/processorCyclic/processorCyclicFvPatchField.H b/src/finiteVolume/fields/fvPatchFields/constraint/processorCyclic/processorCyclicFvPatchField.H
+index b823d574d6..a2aeea9699 100644
+--- a/src/finiteVolume/fields/fvPatchFields/constraint/processorCyclic/processorCyclicFvPatchField.H
++++ b/src/finiteVolume/fields/fvPatchFields/constraint/processorCyclic/processorCyclicFvPatchField.H
+@@ -160,9 +160,14 @@ public:
+         // Access
+ 
+             //- Does the patch field perform the transformation
++//            virtual bool doTransform() const
++//            {
++//                return !(procPatch_.parallel() || pTraits<Type>::rank == 0);
++//            }
++
+             virtual bool doTransform() const
+             {
+-                return !(procPatch_.parallel() || pTraits<Type>::rank == 0);
++                return !(procPatch_.parallel());
+             }
+ 
+             //- Return face transformation tensor
+-- 
+2.43.2
+
