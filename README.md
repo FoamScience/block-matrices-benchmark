@@ -21,7 +21,7 @@ wget https://github.com/apptainer/apptainer/releases/download/v1.3.3/apptainer_1
 sudo apt install ./apptainer_1.3.3_amd64.deb
 # Get the container [in a temporary location]
 cd /tmp
-apptainer pull oras://ghcr.io/foamscience/block-matrices-benchmark.sif
+apptainer pull bmb.sif oras://ghcr.io/foamscience/block-matrices-benchmark
 # Setup foamUT for executing the benchmarks
 export FOAM_FOAMUT=/tmp/ut
 export CATCH_TIMEOUT=300
@@ -30,10 +30,10 @@ cd $FOAM_FOAMUT
 # What comes next is exactly the same as if things were installed locally
 # notice in container commands, skip the $ sign
 rm -rf $FOAM_FOAMUT/tests/exampleTests $FOAM_FOAMUT/cases
-apptainer run /tmp/block-matrices-benchmark.sif "cp -r \$REPO_ROOT/tests \$FOAM_FOAMUT/tests/blockMatrices"
-apptainer run /tmp/block-matrices-benchmark.sif "cp -r \$REPO_ROOT/cases \$FOAM_FOAMUT/cases"
+apptainer run /tmp/bmb.sif "cp -r \$REPO_ROOT/tests \$FOAM_FOAMUT/tests/blockMatrices"
+apptainer run /tmp/bmb.sif "cp -r \$REPO_ROOT/cases \$FOAM_FOAMUT/cases"
 # Run the benchmarks, currently there is no parallel support (ICSFoam)
-apptainer run /tmp/block-matrices-benchmark.sif "wclean tests/blockMatrices; ./Alltest --no-parallel --benchmark-samples 20"
+apptainer run /tmp/bmb.sif "wclean tests/blockMatrices; ./Alltest --no-parallel --benchmark-samples 20"
 ```
 
 For Foam-Extend, there is no customization needed, hence you can always run this
