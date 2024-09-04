@@ -1,0 +1,24 @@
+From 8e8d7b7fc0ef25b5f091f07d41365ac6f13963db Mon Sep 17 00:00:00 2001
+From: Elwardi <elwardi.fadeli@tu-darmstadt.de>
+Date: Wed, 4 Sep 2024 10:20:20 +0200
+Subject: [PATCH] fix: compile on newer compilers
+
+---
+ src/OpenFOAM/primitives/strings/word/word.C | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/OpenFOAM/primitives/strings/word/word.C b/src/OpenFOAM/primitives/strings/word/word.C
+index 47c9ddd9f7..acdf11f006 100644
+--- a/src/OpenFOAM/primitives/strings/word/word.C
++++ b/src/OpenFOAM/primitives/strings/word/word.C
+@@ -30,6 +30,7 @@ License
+ #include "debug.H"
+ #include <cctype>
+ #include <sstream>
++#include <cstdint>
+ 
+ // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
+ 
+-- 
+2.43.2
+

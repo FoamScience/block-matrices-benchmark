@@ -1,0 +1,41 @@
+From efcad2cd6317112601dc953babd0fc2943b56c43 Mon Sep 17 00:00:00 2001
+From: Elwardi <elwardi.fadeli@tu-darmstadt.de>
+Date: Wed, 4 Sep 2024 09:34:56 +0200
+Subject: [PATCH] build: controllable install paths for Petsc
+
+---
+ of90/downloadEigen | 4 ++--
+ of90/installPetsc  | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/of90/downloadEigen b/of90/downloadEigen
+index 5282dd2..6e787a1 100755
+--- a/of90/downloadEigen
++++ b/of90/downloadEigen
+@@ -38,8 +38,8 @@ EigenV="3.4.0"
+ 
+ [ -z "$WM_PROJECT_USER_DIR" ] && { echo " "; echo "ERROR: OpenFOAM vars are not loaded"; echo " "; exit 1; }
+ 
+-mkdir -p $WM_PROJECT_USER_DIR/ThirdParty
+-cd $WM_PROJECT_USER_DIR/ThirdParty
++mkdir -p "$1"
++cd "$1" || exit 1
+ 
+ wget "https://gitlab.com/libeigen/eigen/-/archive/$EigenV/eigen-$EigenV.tar.gz"
+ 
+diff --git a/of90/installPetsc b/of90/installPetsc
+index 71c93a4..b420e11 100755
+--- a/of90/installPetsc
++++ b/of90/installPetsc
+@@ -44,7 +44,7 @@
+ PetscV="3.19.6"
+ 
+ # This dir can be changed 
+-PetscIntallDir=$WM_PROJECT_USER_DIR/ThirdParty
++PetscIntallDir="$1"
+ 
+ # Set here paths to mpi. Default to systemOpenMPI, as used by default in OpenFOAM. Should
+ # be changed by the user for other cases (mpich, thirdparty openmpi, mvapich,...). 
+-- 
+2.43.2
+
