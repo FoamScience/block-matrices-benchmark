@@ -30,8 +30,8 @@ cd $FOAM_FOAMUT
 # What comes next is exactly the same as if things were installed locally
 # notice in container commands, skip the $ sign
 rm -rf $FOAM_FOAMUT/tests/exampleTests $FOAM_FOAMUT/cases
-apptainer run /tmp/block-matrices-benchmark.sif "ln -s \$REPO_ROOT/tests \$FOAM_FOAMUT/tests/blockMatrices"
-apptainer run /tmp/block-matrices-benchmark.sif "ln -s \$REPO_ROOT/cases \$FOAM_FOAMUT/cases"
+apptainer run /tmp/block-matrices-benchmark.sif "cp -r \$REPO_ROOT/tests \$FOAM_FOAMUT/tests/blockMatrices"
+apptainer run /tmp/block-matrices-benchmark.sif "cp -r \$REPO_ROOT/cases \$FOAM_FOAMUT/cases"
 # Run the benchmarks, currently there is no parallel support (ICSFoam)
 apptainer run /tmp/block-matrices-benchmark.sif "wclean tests/blockMatrices; ./Alltest --no-parallel --benchmark-samples 20"
 ```

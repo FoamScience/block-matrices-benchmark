@@ -2,8 +2,8 @@
 #define IMPLICIT_SOURCE_COUPLING_H
 
 #if defined(OPENFOAM)
-#include "coupledMatrix.H"
 #include "coupledSolver.H"
+#include "coupledMatrix.H"
 #include "fvCFD.H"
 #else
 #include "vector2.H"

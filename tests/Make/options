@@ -8,7 +8,7 @@ else
                 -L$(PETSC_DIR)/$(PETSC_ARCH)/lib -lHYPRE \
                 -L$(PETSC_DIR)/$(PETSC_ARCH)/lib -lpetsc \
                 $(shell mpicxx --showme:link)
-    FORM_INC = -I$(PETSC_DIR)/$(PETSC_ARCH)/include \
+    FORK_INC = -I$(PETSC_DIR)/$(PETSC_ARCH)/include \
                 -I$(PETSC_DIR)/include \
                 -I$(EIGEN_RHEO) \
                 -I$(REPO_ROOT)/ICSFoam/src/lnInclude \

@@ -16,7 +16,8 @@ From: ubuntu:24.04
     export DEBIAN_FRONTEND=noninteractive
     apt update
     apt-get -y install --no-install-recommends git build-essential python3 \
-        ca-certificates jq libopenmpi-dev vim flex wget sudo gfortran libfl-dev
+        ca-certificates jq libopenmpi-dev vim flex wget sudo gfortran \
+        libfl-dev cmake bison libopenblas-dev liblapack-dev
     git config --global user.email "you@example.com" # for patching
     git config --global user.name "Example"
     git clone --depth 1 --single-branch --branch=OpenFOAM-v2112 https://develop.openfoam.com/Development/openfoam {{ FOAM_INSTALL_PATH }}
