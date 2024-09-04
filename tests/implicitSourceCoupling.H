@@ -29,18 +29,13 @@ struct implicitSourceCoupling {
                         alpha * T - fvm::Sp(alpha, Ts));
     Eqn2.relax();
 #if defined(OPENFOAM)
-    surfaceScalarField coupling(
-        IOobject("coupling", mesh.time().timeName(), mesh, IOobject::NO_READ,
-                 IOobject::NO_WRITE),
-        mesh, dimensionedScalar("z", dimless, -alpha.value()));
-    surfaceScalarField zero(IOobject("zero", mesh.time().timeName(), mesh,
-                                     IOobject::NO_READ, IOobject::NO_WRITE),
-                            mesh, dimensionedScalar("z", dimless, 0.0));
+    fvScalarMatrix coupling(T, T.dimensions());
+    coupling.source() = scalarField(mesh.nCells(),-alpha.value());
     coupledMatrix blockM(mesh, 2, 0, false);
     blockM.dSByS(0, 0).insertEquation(Eqn1);
-    blockM.dSByS(0, 1).insertBlock(coupling, zero);
+    blockM.dSByS(0, 1).insertEquation(coupling);
     blockM.dSByS(1, 1).insertEquation(Eqn2);
-    blockM.dSByS(1, 0).insertBlock(zero, coupling);
+    blockM.dSByS(1, 0).insertEquation(coupling);
     PtrList<volScalarField> flds(2);
     flds.set(0, new volScalarField(
                     IOobject("T", mesh.time().timeName(), mesh,
