@@ -21,7 +21,7 @@ wget https://github.com/apptainer/apptainer/releases/download/v1.3.3/apptainer_1
 sudo apt install ./apptainer_1.3.3_amd64.deb
 # Get the container [in a temporary location]
 cd /tmp
-apptainer pull oras://ghrc.io/foamscience/block-matrices-benchmark.sif
+apptainer pull oras://ghcr.io/foamscience/block-matrices-benchmark.sif
 # Setup foamUT for executing the benchmarks
 export FOAM_FOAMUT=/tmp/ut
 export CATCH_TIMEOUT=300
