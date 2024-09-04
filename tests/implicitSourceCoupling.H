@@ -4,14 +4,17 @@
 #if defined(OPENFOAM)
 #include "coupledMatrix.H"
 #include "coupledSolver.H"
-#else
-#include "fvBlockMatrix.H"
-#include "vector2.H"
-#endif
 #include "fvCFD.H"
+#else
+#include "vector2.H"
+#include "fvCFD.H"
+#include "surfaceInterpolationScheme.H"
+#include "fvBlockMatrix.H"
+#endif
 
 struct implicitSourceCoupling {
   static bool solveCoupledEqns(const fvMesh &mesh, const dictionary &config) {
+    Info().stdStream().setstate(std::ios_base::failbit);
     volScalarField &T =
         const_cast<volScalarField &>(mesh.lookupObject<volScalarField>("T"));
     volScalarField &Ts =
@@ -30,7 +33,7 @@ struct implicitSourceCoupling {
     Eqn2.relax();
 #if defined(OPENFOAM)
     fvScalarMatrix coupling(T, T.dimensions());
-    coupling.source() = scalarField(mesh.nCells(),-alpha.value());
+    coupling.source() = scalarField(mesh.nCells(), -alpha.value());
     coupledMatrix blockM(mesh, 2, 0, false);
     blockM.dSByS(0, 0).insertEquation(Eqn1);
     blockM.dSByS(0, 1).insertEquation(coupling);
@@ -65,10 +68,12 @@ struct implicitSourceCoupling {
     T.correctBoundaryConditions();
     Ts.correctBoundaryConditions();
 #endif
+    Info().stdStream().clear();
     return true;
   }
   static bool solvePetScEqns(const fvMesh &mesh, const dictionary &config) {
 #if defined(OPENFOAM)
+    Info().stdStream().setstate(std::ios_base::failbit);
     auto csPtr = autoPtr<coupledSolver>(new coupledSolver(
         "T-Ts", mesh.name(), mesh.time(), mesh.solutionDict()));
     csPtr->insertMesh(mesh);
@@ -98,6 +103,7 @@ struct implicitSourceCoupling {
     cs.insertEquation(Ts.name(), Ts.name(), Eqn2);
     cs.insertEquation(Ts.name(), T.name(), cpl);
     cs.solve();
+    Info().stdStream().clear();
     return true;
 #else
     return true;

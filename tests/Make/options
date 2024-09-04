@@ -1,25 +1,28 @@
 ifeq ($(WM_PROJECT), foam)
-    FORK_LIB = 
+    include $(RULES)/mplib$(WM_MPLIB)
+    FORK_LIB = $(PLIBS)
+    FORK_INC = $(PFLAGS) $(PINC)
 else
     FORK_LIB = -L$(FOAM_LIBBIN)/$(FOAM_MPI) -lICSFoam -lPstream -lsparseMatrixSolvers \
                 -lfvmb \
                 -L$(PETSC_DIR)/$(PETSC_ARCH)/lib -lHYPRE \
                 -L$(PETSC_DIR)/$(PETSC_ARCH)/lib -lpetsc \
                 $(shell mpicxx --showme:link)
+    FORM_INC = -I$(PETSC_DIR)/$(PETSC_ARCH)/include \
+                -I$(PETSC_DIR)/include \
+                -I$(EIGEN_RHEO) \
+                -I$(REPO_ROOT)/ICSFoam/src/lnInclude \
+                -I$(REPO_ROOT)/rheotool/of90/src/libs/sparseMatrixSolvers/lnInclude \
+                -I$(REPO_ROOT)/rheotool/of90/src/libs/fvmb/lnInclude \
+                $(shell mpicxx --showme:compile)
 endif
 
 EXE_INC = -std=c++14 -Wno-old-style-cast \
-    -I$(PETSC_DIR)/$(PETSC_ARCH)/include \
-    -I$(PETSC_DIR)/include \
-    -I$(EIGEN_RHEO) \
     -I$(LIB_SRC)/finiteVolume/lnInclude \
     -I$(LIB_SRC)/meshTools/lnInclude \
     -I$(LIB_SRC)/Pstream/lnInclude \
     -I$(FOAM_USER_LIBBIN)/catch2/include \
-    -I$(REPO_ROOT)/ICSFoam/src/lnInclude \
-    -I$(REPO_ROOT)/rheotool/of90/src/libs/sparseMatrixSolvers/lnInclude \
-    -I$(REPO_ROOT)/rheotool/of90/src/libs/fvmb/lnInclude \
-    $(shell mpicxx --showme:compile)
+    $(FORK_INC)
     
 EXE_LIBS = \
     -lfiniteVolume \

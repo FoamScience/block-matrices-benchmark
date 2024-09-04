@@ -1,6 +1,5 @@
 #include "catch2/catch_all.hpp"
 #include "catch2/catch_test_macros.hpp"
-#include "coupledSolver.H"
 #include "implicitSourceCoupling.H"
 #include <mpi.h>
 
@@ -27,14 +26,20 @@ TEST_CASE("Implicitly coupled source term gets resolved",
   volVectorField U(IOobject("U", runTime.timeName(), mesh, IOobject::MUST_READ,
                             IOobject::NO_WRITE),
                    mesh);
-#include "createPhi.H"
   dictionary config;
-  dimensionedScalar DT("DT", dimLength * dimVelocity, 1.0);
+  auto dtVal = GENERATE(0.0, 1.0, 50.0);
+  dimensionedScalar DT("DT", dimLength * dimVelocity, dtVal);
   config.set("DT", DT);
-  dimensionedScalar DTs("DTs", dimLength * dimVelocity, 2.0);
+  auto dtsVal = GENERATE(2.0, 30.0);
+  dimensionedScalar DTs("DTs", dimLength * dimVelocity, dtsVal);
   config.set("DTs", DTs);
-  dimensionedScalar alpha("alpha", dimless / dimTime, 10.0);
+  auto alphaVal = GENERATE(2.0, 10.0);
+  dimensionedScalar alpha("alpha", dimless / dimTime, alphaVal);
   config.set("alpha", alpha);
+  auto uVal = GENERATE(0.0, 2.0, 5.0);
+  forAll(U.internalField(), ci) { U[ci] = vector(uVal, 0, 0); }
+  CAPTURE(dtVal, dtsVal, alphaVal, uVal);
+#include "createPhi.H"
 
   BENCHMARK("Native implementations of coupled equations") {
     return implicitSourceCoupling::solveCoupledEqns(mesh, config);
