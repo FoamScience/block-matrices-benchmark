@@ -7,6 +7,18 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+
+coupledSolvers
+{  
+    T-Ts
+    {
+        saveSystem true;
+        robustSumCheck  true;
+        updatePrecondFrequency 100000;  
+        updateMatrixCoeffs false;   
+    }
+}
+
 solvers
 {
     //blockT
