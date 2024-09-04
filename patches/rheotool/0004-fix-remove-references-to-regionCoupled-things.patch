@@ -1,0 +1,27 @@
+From 3b9a127f7d118bc999830e42314d51da68656bc5 Mon Sep 17 00:00:00 2001
+From: Elwardi <elwardi.fadeli@tu-darmstadt.de>
+Date: Wed, 4 Sep 2024 14:32:14 +0200
+Subject: [PATCH] fix: remove references to regionCoupled things
+
+---
+ of90/src/libs/sparseMatrixSolvers/coupled/coupledSolver.H | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolver.H b/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolver.H
+index e196fb3..b8eca66 100755
+--- a/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolver.H
++++ b/of90/src/libs/sparseMatrixSolvers/coupled/coupledSolver.H
+@@ -47,8 +47,8 @@ Description
+ #include "cyclicFvPatchField.H" 
+ 
+ //#include "regionCoupledAMIFvPatch.H" 
+-#include "regionCoupledBaseFvPatch.H"
+-#include "coupledTFvPatchScalarField.H"
++//#include "regionCoupledBaseFvPatch.H"
++//#include "coupledTFvPatchScalarField.H"
+  
+ #include "sparseSolverBase.H"
+ #include "LMatrix.H"
+-- 
+2.43.2
+
