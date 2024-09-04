@@ -1,0 +1,128 @@
+Bootstrap: docker
+From: ubuntu:24.04
+
+%arguments
+    FOAM_INSTALL_PATH=/usr/lib/openfoam/openfoam2112
+    REPO_ROOT=/opt/bmb
+
+%environment
+    export EIGEN_RHEO=/opt/Eigen3.4.0
+    export PETSC_DIR=/opt/petsc-3.19.6
+    export PETSC_ARCH=arch-linux-c-opt
+    export REPO_ROOT={{ REPO_ROOT }}
+    export LD_LIBRARY_PATH=${PETSC_DIR}/${PETSC_ARCH}/lib/:$LD_LIBRARY_PATH
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    apt update
+    apt-get -y install --no-install-recommends git build-essential python3 \
+        ca-certificates jq libopenmpi-dev vim flex wget sudo gfortran libfl-dev
+    git config --global user.email "you@example.com" # for patching
+    git config --global user.name "Example"
+    git clone --depth 1 --single-branch --branch=OpenFOAM-v2112 https://develop.openfoam.com/Development/openfoam {{ FOAM_INSTALL_PATH }}
+    git clone https://github.com/FoamScience/block-matrices-benchmark {{ REPO_ROOT }}
+    git clone https://github.com/stefanoOliani/ICSFoam {{ REPO_ROOT }}/ICSFoam
+    git clone https://github.com/fppimenta/rheoTool {{ REPO_ROOT }}/rheotool
+    # Set container metadata before patching
+    openfoam_commit=$(git --git-dir={{ FOAM_INSTALL_PATH }}/.git rev-parse HEAD)
+    repo_commit=$(git --git-dir={{ REPO_ROOT }}/.git rev-parse HEAD)
+    ics_commit=$(git --git-dir={{ REPO_ROOT }}/ICSFoam/.git rev-parse HEAD)
+    rheo_commit=$(git --git-dir={{ REPO_ROOT }}/rheotool/.git rev-parse HEAD)
+    echo '{}' > /apps.json
+    jq --arg app openfoam --arg commit $openfoam_commit \
+        '.[$app] |= if . == null then
+        {
+            fork: "com-openfoam",
+            branch: "OpenFOAM-v2112",
+            commit: $commit,
+            path: "{{ FOAM_INSTALL_PATH }}",
+            version: "2112"
+        }
+        else . +
+        {
+            fork: "com-openfoam",
+            branch: "OpenFOAM-v2112",
+            commit: $commit,
+            path: "{{ FOAM_INSTALL_PATH }}",
+            version: "2112"
+        } end' /apps.json > /tmp/apps.json
+    mv /tmp/apps.json /apps.json
+    jq --arg app icsfoam --arg commit $ics_commit \
+        '.[$app] |= if . == null then
+        {
+            branch: "master",
+            path: "{{ REPO_ROOT }}/ICSFoam",
+            commit: $commit
+        }
+        else . +
+        {
+            branch: "master",
+            path: "{{ REPO_ROOT }}/ICSFoam",
+            commit: $commit
+        } end' /apps.json > /tmp/apps.json
+    mv /tmp/apps.json /apps.json
+    jq --arg app rheotool --arg commit $rheo_commit \
+        '.[$app] |= if . == null then
+        {
+            branch: "master",
+            path: "{{ REPO_ROOT }}/rheotool",
+            commit: $commit
+        }
+        else . +
+        {
+            branch: "master",
+            path: "{{ REPO_ROOT }}/rheotool",
+            commit: $commit
+        } end' /apps.json > /tmp/apps.json
+    mv /tmp/apps.json /apps.json
+    jq --arg app block-matrices-benchmark --arg commit $repo_commit \
+        '.[$app] |= if . == null then
+        {
+            branch: "main",
+            path: "{{ REPO_ROOT }}",
+            commit: $commit
+        }
+        else . +
+        {
+            branch: "main",
+            path: "{{ REPO_ROOT }}",
+            commit: $commit
+        } end' /apps.json > /tmp/apps.json
+    mv /tmp/apps.json /apps.json
+    ## Patch OpenFOAM and RheoTool
+    cd {{ FOAM_INSTALL_PATH }}
+    git am -3 {{ REPO_ROOT }}/patches/openfoam/0001-fix-adapt-patch-classes-for-use-with-ICSFoam.patch
+    git am -3 {{ REPO_ROOT }}/patches/openfoam/0002-fix-compile-on-newer-compilers.patch
+    cd {{ REPO_ROOT }}/rheotool
+    git am -3 {{ REPO_ROOT }}/patches/rheotool/0001-build-update-versions.patch
+    git am -3 {{ REPO_ROOT }}/patches/rheotool/0002-fix-port-sparseMatrixSolvers-to-ESI.patch
+    git am -3 {{ REPO_ROOT }}/patches/rheotool/0003-build-controllable-install-paths-for-Petsc.patch
+    git am -3 {{ REPO_ROOT }}/patches/rheotool/0004-fix-remove-references-to-regionCoupled-things.patch
+    ## Compile OpenFOAM, ICSFoam, and RheoTool
+    exec /bin/bash << EOF
+        cd {{ FOAM_INSTALL_PATH }}
+        source etc/bashrc
+        "\${WM_DIR:-wmake}"/src/Allmake
+        cd {{ REPO_ROOT }}/rheotool/of90
+        export EIGEN_RHEO=/opt/Eigen3.4.0
+        export PETSC_DIR=/opt/petsc-3.19.6
+        export PETSC_ARCH=arch-linux-c-opt
+        export LD_LIBRARY_PATH=/opt/petsc-3.19.6/arch-linux-c-opt/lib/:\$LD_LIBRARY_PATH
+        ./downloadEigen /opt
+        ./installPetsc /opt
+        cd {{ FOAM_INSTALL_PATH }}
+        ./src/Allwmake -j || echo "Well, that's alright ..."
+        export FOAM_USER_LIBBIN=\$FOAM_LIBBIN
+        cd {{ REPO_ROOT }}/rheotool/of90
+        wmake libso src/libs/fvmb
+        wmake libso src/libs/sparseMatrixSolvers
+        cd {{ REPO_ROOT }}/ICSFoam
+        wmake libso src
+EOF
+
+%runscript
+    if [ $# -eq 0 ]; then
+        /bin/bash -c "source {{ FOAM_INSTALL_PATH }}/etc/bashrc && /bin/bash --login"
+    else
+        /bin/bash -c "source {{ FOAM_INSTALL_PATH }}/etc/bashrc && $@"
+   fi
