@@ -123,7 +123,7 @@ above, but this is a user choice)  and records the average wall time taken to co
 > two OpenFOAM forks within a single unit-test.
 
 The setup of the coupled system is identical throughout all tests, and all tests are ran on the same OpenFOAM
-case, reactively called [theCase](cases/theCase). All implementations use GMRES with identical settings since
+case, creatively called [theCase](cases/theCase). All implementations use GMRES with identical settings since
 it's the only one available on all benchmarked frameworks.
 
 The `T` and `Ts` fields (to be transported) are initialized a sine wave.
