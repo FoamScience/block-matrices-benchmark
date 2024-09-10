@@ -2,7 +2,6 @@
 #define IMPLICIT_SOURCE_COUPLING_H
 
 #if defined(OPENFOAM)
-#include "coupledSolver.H"
 #include "coupledMatrix.H"
 #include "fvCFD.H"
 #else
@@ -71,44 +70,44 @@ struct implicitSourceCoupling {
     Info().stdStream().clear();
     return true;
   }
-  static bool solvePetScEqns(const fvMesh &mesh, const dictionary &config) {
-#if defined(OPENFOAM)
-    Info().stdStream().setstate(std::ios_base::failbit);
-    auto csPtr = autoPtr<coupledSolver>(new coupledSolver(
-        "T-Ts", mesh.name(), mesh.time(), mesh.solutionDict()));
-    csPtr->insertMesh(mesh);
-    coupledSolver &cs = csPtr();
-    volScalarField &T =
-        const_cast<volScalarField &>(mesh.lookupObject<volScalarField>("T"));
-    volScalarField &Ts =
-        const_cast<volScalarField &>(mesh.lookupObject<volScalarField>("Ts"));
-    surfaceScalarField &phi = const_cast<surfaceScalarField &>(
-        mesh.lookupObject<surfaceScalarField>("phi"));
-    dimensionedScalar alpha(config.lookup("alpha"));
-    dimensionedScalar DT(config.lookup("DT"));
-    dimensionedScalar DTs(config.lookup("DTs"));
-
-    fvScalarMatrix Eqn1(fvm::div(phi, T) - fvm::laplacian(DT, T) ==
-                        alpha * Ts - fvm::Sp(alpha, T));
-    Eqn1.relax();
-    fvScalarMatrix Eqn2(-fvm::laplacian(DTs, Ts) ==
-                        alpha * T - fvm::Sp(alpha, Ts));
-    Eqn2.relax();
-    cs.insertField(T);
-    cs.insertField(Ts);
-    fvScalarMatrix cpl(T, T.dimensions());
-    cpl.source() = scalarField(mesh.nCells(), -alpha.value());
-    cs.insertEquation(T.name(), T.name(), Eqn1);
-    cs.insertEquation(T.name(), Ts.name(), cpl);
-    cs.insertEquation(Ts.name(), Ts.name(), Eqn2);
-    cs.insertEquation(Ts.name(), T.name(), cpl);
-    cs.solve();
-    Info().stdStream().clear();
-    return true;
-#else
-    return true;
-#endif
-  }
+//  static bool solvePetScEqns(const fvMesh &mesh, const dictionary &config) {
+//#if defined(OPENFOAM)
+//    Info().stdStream().setstate(std::ios_base::failbit);
+//    auto csPtr = autoPtr<coupledSolver>(new coupledSolver(
+//        "T-Ts", mesh.name(), mesh.time(), mesh.solutionDict()));
+//    csPtr->insertMesh(mesh);
+//    coupledSolver &cs = csPtr();
+//    volScalarField &T =
+//        const_cast<volScalarField &>(mesh.lookupObject<volScalarField>("T"));
+//    volScalarField &Ts =
+//        const_cast<volScalarField &>(mesh.lookupObject<volScalarField>("Ts"));
+//    surfaceScalarField &phi = const_cast<surfaceScalarField &>(
+//        mesh.lookupObject<surfaceScalarField>("phi"));
+//    dimensionedScalar alpha(config.lookup("alpha"));
+//    dimensionedScalar DT(config.lookup("DT"));
+//    dimensionedScalar DTs(config.lookup("DTs"));
+//
+//    fvScalarMatrix Eqn1(fvm::div(phi, T) - fvm::laplacian(DT, T) ==
+//                        alpha * Ts - fvm::Sp(alpha, T));
+//    Eqn1.relax();
+//    fvScalarMatrix Eqn2(-fvm::laplacian(DTs, Ts) ==
+//                        alpha * T - fvm::Sp(alpha, Ts));
+//    Eqn2.relax();
+//    cs.insertField(T);
+//    cs.insertField(Ts);
+//    fvScalarMatrix cpl(T, T.dimensions());
+//    cpl.source() = scalarField(mesh.nCells(), -alpha.value());
+//    cs.insertEquation(T.name(), T.name(), Eqn1);
+//    cs.insertEquation(T.name(), Ts.name(), cpl);
+//    cs.insertEquation(Ts.name(), Ts.name(), Eqn2);
+//    cs.insertEquation(Ts.name(), T.name(), cpl);
+//    cs.solve();
+//    Info().stdStream().clear();
+//    return true;
+//#else
+//    return true;
+//#endif
+//  }
 };
 
 #endif // !IMPLICIT_SOURCE_COUPLING_H

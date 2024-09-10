@@ -41,19 +41,19 @@ TEST_CASE("Implicitly coupled source term gets resolved",
   };
 
 
-#if defined(OPENFOAM)
-  if (!Pstream::parRun()) {
-    MPI_Init(NULL, NULL);
-  }
-
-  BENCHMARK("PetSc implementation of coupled equations") {
-    return implicitSourceCoupling::solvePetScEqns(mesh, config);
-  };
-
-  if (!Pstream::parRun()) {
-    MPI_Finalize();
-  }
-#endif
+//#if defined(OPENFOAM)
+//  if (!Pstream::parRun()) {
+//    MPI_Init(NULL, NULL);
+//  }
+//
+//  BENCHMARK("PetSc implementation of coupled equations") {
+//    return implicitSourceCoupling::solvePetScEqns(mesh, config);
+//  };
+//
+//  if (!Pstream::parRun()) {
+//    MPI_Finalize();
+//  }
+//#endif
 
   runTime.setTime(0.0, 0);
 }
