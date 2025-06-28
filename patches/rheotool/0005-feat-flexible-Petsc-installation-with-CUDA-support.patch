@@ -1,0 +1,69 @@
+From 3863202de440448328339b72a99a88489f1d50cf Mon Sep 17 00:00:00 2001
+From: Elwardi <elwardi.fadeli@tu-darmstadt.de>
+Date: Sat, 28 Jun 2025 11:01:05 +0200
+Subject: [PATCH] feat: flexible Petsc installation with CUDA support
+
+---
+ of90/downloadEigen |  2 +-
+ of90/installPetsc  | 25 +++++++++++++++++++++++--
+ 2 files changed, 24 insertions(+), 3 deletions(-)
+
+diff --git a/of90/downloadEigen b/of90/downloadEigen
+index 6e787a1..b9be3d4 100755
+--- a/of90/downloadEigen
++++ b/of90/downloadEigen
+@@ -34,7 +34,7 @@
+ #
+ #------------------------------------------------------------------------------
+ 
+-EigenV="3.4.0"
++EigenV="$2"
+ 
+ [ -z "$WM_PROJECT_USER_DIR" ] && { echo " "; echo "ERROR: OpenFOAM vars are not loaded"; echo " "; exit 1; }
+ 
+diff --git a/of90/installPetsc b/of90/installPetsc
+index b420e11..2e5d0f0 100755
+--- a/of90/installPetsc
++++ b/of90/installPetsc
+@@ -41,7 +41,7 @@
+ #
+ #------------------------------------------------------------------------------
+ 
+-PetscV="3.19.6"
++PetscV="$2"
+ 
+ # This dir can be changed 
+ PetscIntallDir="$1"
+@@ -127,7 +127,28 @@ sudo apt-get install libblas-dev liblapack-dev flex bison git make cmake gfortra
+ 
+ cd petsc-$PetscV 
+ 
+-./configure --with-mpi-dir=$mpiDir --with-debugging=0 --download-hypre --download-parmetis --download-metis --download-ptscotch --download-mumps --download-scalapack --with-precision=double --with-shared-libraries=1 --with-scalar-type=real CXX_LINKER_FLAGS=-Wl,--no-as-needed CFLAGS="-g -O2 -fPIC -fstack-protector-strong -Wformat -Werror=format-security" CXXFLAGS="-g -O2 -fPIC -fstack-protector-strong -Wformat -Werror=format-security" FCFLAGS="-g -O2 -fstack-protector-strong" FFLAGS="-g -O2 -fstack-protector-strong" CPPFLAGS="-Wdate-time -D_FORTIFY_SOURCE=2" LDFLAGS="-Wl,-Bsymbolic-functions -Wl,-z,relro" MAKEFLAGS=w
++./configure --with-mpi-dir=$mpiDir \
++    --with-fortran-bindings=0 \
++    --with-debugging=0 \
++    --with-cuda=1 \
++    --with-cudac=nvcc \
++    --download-hypre \
++    --download-parmetis \
++    --download-metis \
++    --download-ptscotch \
++    --download-mumps \
++    --download-scalapack \
++    --with-precision=double \
++    --with-shared-libraries=1 \
++    --with-scalar-type=real \
++    CXX_LINKER_FLAGS=-Wl,--no-as-needed \
++    CFLAGS="-g -O2 -fPIC -fstack-protector-strong -Wformat -Werror=format-security" \
++    CXXFLAGS="-g -O2 -fPIC -fstack-protector-strong -Wformat -Werror=format-security" \
++    FCFLAGS="-g -O2 -fstack-protector-strong" \
++    FFLAGS="-g -O2 -fstack-protector-strong" \
++    CPPFLAGS="-Wdate-time -D_FORTIFY_SOURCE=2" \
++    LDFLAGS="-Wl,-Bsymbolic-functions -Wl,-z,relro" \
++    MAKEFLAGS=w
+ 
+ state=$?
+ 
+-- 
+2.43.2
+
