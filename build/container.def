@@ -1,14 +1,15 @@
 Bootstrap: docker
-# use ubuntu:24.04 if not needing PetSc's GPU capabilitites
-# From: ubuntu:24.04
-From: nvidia/cuda:12.9.1-devel-ubuntu24.04
+From: ubuntu:24.04
+# MAYBE better to fix the cuda version:
+#From: nvidia/cuda:12.9.1-devel-ubuntu24.04
 
 %arguments
     FOAM_INSTALL_PATH=/usr/lib/openfoam/openfoam2112
     REPO_ROOT=/opt/bmb
+    REPO_REF=perf
     PETSC_VERSION=3.23.3
     EIGEN_VERSION=3.4.0
-    BUILD_MODE=Debug
+    BUILD_MODE=Opt
 
 %environment
     export EIGEN_RHEO=/opt/Eigen{{ EIGEN_VERSION }}
@@ -18,6 +19,7 @@ From: nvidia/cuda:12.9.1-devel-ubuntu24.04
     export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
     export PATH=${JAVA_HOME}/bin:/opt/hpcviewer:$PATH
     export LD_LIBRARY_PATH=${PETSC_DIR}/${PETSC_ARCH}/lib/:/usr/local/lib64:/usr/local/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+    source "{{ FOAM_INSTALL_PATH }}/etc/bashrc"
 
 %post
     # 0.0 install dependencies
@@ -65,6 +67,7 @@ From: nvidia/cuda:12.9.1-devel-ubuntu24.04
         mawk \
         meson \
         ninja-build \
+        nvidia-cuda-toolkit \
         openjdk-21-jdk \
         openjdk-21-jre \
         pkg-config \
@@ -78,7 +81,7 @@ From: nvidia/cuda:12.9.1-devel-ubuntu24.04
         wget \
         zlib1g-dev
 
-    git config --global user.email "you@example.com" # for patching
+    git config --global user.email "you@example.com" # for patching during builds
     git config --global user.name "Example"
     export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
     export PATH=$PATH:$JAVA_HOME/bin
@@ -86,7 +89,10 @@ From: nvidia/cuda:12.9.1-devel-ubuntu24.04
     # get software packages
     git clone --depth 1 --single-branch --branch=OpenFOAM-v2112 https://develop.openfoam.com/Development/openfoam {{ FOAM_INSTALL_PATH }}
     git clone https://gitlab.com/hpctoolkit/hpctoolkit /opt/hpctoolkit
-    git clone --branch perf https://github.com/FoamScience/block-matrices-benchmark {{ REPO_ROOT }}
+    git clone https://github.com/FoamScience/block-matrices-benchmark {{ REPO_ROOT }}
+    cd {{ REPO_ROOT }}
+    git checkout {{ REPO_REF }}
+    cd -
     git clone https://github.com/stefanoOliani/ICSFoam {{ REPO_ROOT }}/ICSFoam
     git clone https://github.com/fppimenta/rheoTool {{ REPO_ROOT }}/rheotool
 
@@ -174,6 +180,7 @@ From: nvidia/cuda:12.9.1-devel-ubuntu24.04
             commit: $commit
         } end' /apps.json > /tmp/apps.json
     mv /tmp/apps.json /apps.json
+
     # patch OpenFOAM and RheoTool
     cd {{ FOAM_INSTALL_PATH }}
     git am -3 {{ REPO_ROOT }}/patches/openfoam/0001-fix-adapt-patch-classes-for-use-with-ICSFoam.patch
@@ -184,6 +191,7 @@ From: nvidia/cuda:12.9.1-devel-ubuntu24.04
     git am -3 {{ REPO_ROOT }}/patches/rheotool/0003-build-controllable-install-paths-for-Petsc.patch
     git am -3 {{ REPO_ROOT }}/patches/rheotool/0004-fix-remove-references-to-regionCoupled-things.patch
     git am -3 {{ REPO_ROOT }}/patches/rheotool/0005-feat-flexible-Petsc-installation-with-CUDA-support.patch
+    git am -3 {{ REPO_ROOT }}/patches/rheotool/0006-fix-update-Petsc-download-URL.patch
     # compile OpenFOAM bits, icsFoam and rheoTool (all partially)
     /bin/bash <<'EOF'
         cd {{ FOAM_INSTALL_PATH }}
@@ -202,13 +210,14 @@ From: nvidia/cuda:12.9.1-devel-ubuntu24.04
         ./installPetsc /opt {{ PETSC_VERSION }}
         cd {{ FOAM_INSTALL_PATH }}
         export FOAM_USER_LIBBIN=$FOAM_LIBBIN
-        echo "ENVS! $FOAM_LIBBIN - $FOAM_SRC - $FOAM_USER_LIBBIN"
         ./src/Allwmake -j #|| echo "Well, that's alright ..."
         cd {{ REPO_ROOT }}/rheotool/of90
         wmake libso src/libs/fvmb
         wmake libso src/libs/sparseMatrixSolvers
         cd {{ REPO_ROOT }}/ICSFoam
         wmake libso src
+        wmake $FOAM_APP/utilities/mesh/generation/blockMesh
+        wmake $FOAM_APP/utilities/parallelProcessing/decomposePar
 EOF
     # compile hpctoolkit and get hpcviwer
     curl -L  -o /opt/hpcviewer.tgz https://gitlab.com/hpctoolkit/hpcviewer/-/releases/2024.09/downloads/hpcviewer-linux.gtk.x86_64.tgz
@@ -243,8 +252,9 @@ EOF
 EOF
 
 %runscript
+    #!/bin/bash
     if [ $# -eq 0 ]; then
-        /bin/bash -c "source {{ FOAM_INSTALL_PATH }}/etc/bashrc && /bin/bash --login"
+        /bin/bash
     else
-        /bin/bash -c "source {{ FOAM_INSTALL_PATH }}/etc/bashrc && $@"
-   fi
+        /bin/bash -c "$@"
+    fi
