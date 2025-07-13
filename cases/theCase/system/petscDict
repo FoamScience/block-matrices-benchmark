@@ -17,6 +17,6 @@
 -T-Ts_ksp_divtol 10
 
 #--> PC
--T-Ts_pc_type cholesky
--T-Ts_pc_factor_mat_solver_type petsc
- 
+-T-Ts_pc_type hypre
+#-T-Ts_pc_factor_mat_solver_type mumps
+
