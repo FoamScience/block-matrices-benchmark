@@ -43,8 +43,10 @@ Notes:
 
 Example Usage with FoamUT-based tests:
 ======================================
-# 0.0 patch FoamUT
-git -C $FOAM_FOAMUT am -3 0001-feat-remesh-on-case-copy.patch
+# 0.0 get dependencies
+uv sync
+# 0.1 patch FoamUT
+git -C $FOAM_FOAMUT am -3 $PWD/0001-feat-remesh-on-case-copy.patch
 # 1.0 run in serial for a baseline
 apptainer run <container>.sif \'cd $FOAM_FOAMUT; ./Alltest --no-serial -d yes\'
 # 1.1 run the weak scaling study

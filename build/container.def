@@ -19,6 +19,10 @@ From: ubuntu:24.04
     export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
     export PATH=${JAVA_HOME}/bin:/opt/hpcviewer:$PATH
     export LD_LIBRARY_PATH=${PETSC_DIR}/${PETSC_ARCH}/lib/:/usr/local/lib64:/usr/local/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+    # OpenFOAM bashrc deduces the installation path from BASH_SOURCE and the like
+    # although don't need an export here, need to hold its hand since BASH_SOURCE
+    # will not be defined in env context injected by apptainer
+    BASH_SOURCE="{{ FOAM_INSTALL_PATH }}/etc/bashrc"
     source "{{ FOAM_INSTALL_PATH }}/etc/bashrc"
 
 %post
