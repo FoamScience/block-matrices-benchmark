@@ -1,0 +1,56 @@
+From 67239991448dc67cfbca8c0bb5bc24a953832975 Mon Sep 17 00:00:00 2001
+From: Elwardi <elwardi.fadeli@tu-darmstadt.de>
+Date: Sun, 29 Jun 2025 01:28:11 +0200
+Subject: [PATCH] fix: update Petsc download URL
+
+---
+ of90/installPetsc | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/of90/installPetsc b/of90/installPetsc
+index 2e5d0f0..a9071c9 100755
+--- a/of90/installPetsc
++++ b/of90/installPetsc
+@@ -42,6 +42,7 @@
+ #------------------------------------------------------------------------------
+ 
+ PetscV="$2"
++PetscURL="https://web.cels.anl.gov/projects/petsc/download/release-snapshots/petsc-$PetscV.tar.gz"
+ 
+ # This dir can be changed 
+ PetscIntallDir="$1"
+@@ -67,7 +68,7 @@ if [ -f petsc-$PetscV.tar.gz ] || [ -d petsc-$PetscV ]; then
+    read -p "Do you want to remove it and do a new download of this package? (Y/N)" res
+    case $res in
+        [Yy]* ) rm -rf petsc-$PetscV.tar.gz petsc-$PetscV
+-               wget "http://ftp.mcs.anl.gov/pub/petsc/release-snapshots/petsc-$PetscV.tar.gz"
++               wget "$PetscURL"
+                state=$?
+                if [ $state -ne 0 ]; then
+                  printf "\n\n ********************** \n\n"
+@@ -83,7 +84,7 @@ if [ -f petsc-$PetscV.tar.gz ] || [ -d petsc-$PetscV ]; then
+    esac
+  done
+ else
+-   wget "http://ftp.mcs.anl.gov/pub/petsc/release-snapshots/petsc-$PetscV.tar.gz"
++   wget "$PetscURL"
+    state=$?
+    if [ $state -ne 0 ]; then
+      printf "\n\n ********************** \n\n"
+@@ -132,6 +133,7 @@ cd petsc-$PetscV
+     --with-debugging=0 \
+     --with-cuda=1 \
+     --with-cudac=nvcc \
++    --with-hypre=0 \
+     --download-hypre \
+     --download-parmetis \
+     --download-metis \
+@@ -182,5 +184,3 @@ else
+   printf "ERROR: an unexpected error ocurred while compiling Petsc. \n\n"
+   exit 1;
+ fi
+-
+-																												
+-- 
+2.43.2
+
